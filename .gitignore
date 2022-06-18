@@ -1,0 +1,17 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/tui
+tui.so
+tui.dylib
+tui.dll
+tui.a
+tui.lib
+tui-test-*
+*.exe
+*.o
+*.obj
+*.lst
+/out/
+/key.log

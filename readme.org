@@ -1,0 +1,39 @@
+#+TODO: TODO IN-PROGRESS | DONE NOT
+* Simple tui lib for dlang
+- no ncurses: http://xn--rpa.cc/irl/term.html
+  - (easier to handle colors e.g.)
+  - no dependency
+- KEY_RESIZE to react on terminal resizes
+- ansi colors are nice, but hard for clipping
+- signal handler for windowsize changes
+
+
+
+** Todos
+*** IN-PROGRESS BUG for popups the underlying root does not "loos" focus atm
+*** TODO implement scrollview
+*** TODO implement ansi skipping drop and take
+*** DONE implement buffering of terminal output to reduce flickering
+CLOSED: [2022-06-16 Thu 23:22]
+- CLOSING NOTE [2022-06-16 Thu 23:22]
+- CLOSING NOTE [2022-06-13 Mon 23:43]
+
+*** DONE implement popups
+CLOSED: [2022-06-17 Fri 23:25]
+- CLOSING NOTE [2022-06-17 Fri 23:25]
+several roots ... focus goes only to the topmost
+*** NOT introduce container
+*** DONE implement arrow keys
+CLOSED: [2022-06-15 Wed 23:03]
+- CLOSING NOTE [2022-06-15 Wed 23:03]
+*** TODO implement automatic focus strategy
+tiefensuche nach focusierbaren compnenten und cycle.next
+*** DONE for history make redraw not always relayout
+CLOSED: [2022-06-05 Sun 12:08]
+- CLOSING NOTE [2022-06-05 Sun 12:08]
+*** DONE implement -int splits for vsplit
+CLOSED: [2022-06-11 Sat 00:57]
+- CLOSING NOTE [2022-06-11 Sat 00:57]
+*** DONE implement proper event bubbling or somethign else (e.g. only the details view gets the events, or some signal slot thing)
+CLOSED: [2022-06-12 Sun 22:29]
+- CLOSING NOTE [2022-06-12 Sun 22:29]

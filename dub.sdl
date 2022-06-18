@@ -1,0 +1,18 @@
+name "tui"
+description "Terminal UI."
+authors "Christian Koestlin"
+copyright "Copyright (c) 2022, Christian Koestlin"
+license "MIT"
+
+configuration "library" {
+  targetType "library"
+  targetPath "out/lib"
+  excludedSourceFiles "source/app.d"
+}
+
+configuration "tui-demo" {
+  targetType "executable"
+  targetName "tui-demo"
+  targetPath "out/exe"
+  mainSourceFile "source/app.d"
+}
