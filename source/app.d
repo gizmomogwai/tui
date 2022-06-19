@@ -11,9 +11,7 @@ class Text2 : Text
     void dataChanged(int i)
     {
         import std.file : append;
-
         "key.log".append("datachanged\n");
-
         this.content = "Selection changed to %s".format(i);
     }
 }
@@ -64,8 +62,6 @@ int main(string[] args)
             auto b1 = new Button("finish1", _pop);
             auto b2 = new Button("finish2", _pop);
             auto popup = new VSplit(50, b1, b2);
-            popup.addToFocusComponents(b1);
-            popup.addToFocusComponents(b2);
             ui.push(popup);
             return true;
         default:
@@ -78,9 +74,6 @@ int main(string[] args)
     auto rightSide = new ScrollPane(new Text("very long text that should please scroll around and when its done its done 11111111111 bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee "));
     auto columns = new VSplit(60, leftSide, rightSide);
     auto root = new HSplit(-1, columns, status);
-    root.addToFocusComponents(list1);
-    root.addToFocusComponents(list2);
-    root.addToFocusComponents(rightSide);
 
     ui.push(root);
     ui.resize;

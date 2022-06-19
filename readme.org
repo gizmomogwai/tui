@@ -31,7 +31,9 @@ several roots ... focus goes only to the topmost
 *** DONE implement arrow keys
 CLOSED: [2022-06-15 Wed 23:03]
 - CLOSING NOTE [2022-06-15 Wed 23:03]
-*** TODO implement automatic focus strategy
+*** DONE implement automatic focus strategy
+CLOSED: [2022-06-19 Sun 23:26]
+- CLOSING NOTE [2022-06-19 Sun 23:26]
 tiefensuche nach focusierbaren compnenten und cycle.next
 *** DONE for history make redraw not always relayout
 CLOSED: [2022-06-05 Sun 12:08]

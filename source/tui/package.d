@@ -405,8 +405,6 @@ abstract class Component
     // atm those have to be registered manually via
     // addToFocusComponents.
     Component focusPath;
-    Component[] focusComponents;
-    Cycle!(Component[]) focusComponentsRing;
 
     // component that is really focused atm
     Component currentFocusedComponent;
@@ -443,12 +441,6 @@ abstract class Component
         this.inputHandler = inputHandler;
     }
 
-    auto addToFocusComponents(Component c)
-    {
-        focusComponents ~= c;
-        focusComponentsRing = cycle(focusComponents);
-    }
-
     void resize(int left, int top, int width, int height)
     {
         this.left = left;
@@ -467,7 +459,9 @@ abstract class Component
     {
         return true;
     }
-
+    bool focusable() {
+        return false;
+    }
     bool handleInput(KeyInput input)
     {
         switch (input.input)
@@ -517,12 +511,30 @@ abstract class Component
     {
         if (parent is null)
         {
-            focusComponentsRing.find(currentFocusedComponent).next().requestFocus();
+            auto components = findAllFocusableComponents();
+            if (currentFocusedComponent is null) {
+                components.front.requestFocus;
+            } else {
+                components
+                    .cycle
+                    .find(currentFocusedComponent)
+                    .next
+                    .requestFocus;
+            }
         }
         else
         {
             parent.focusNext();
         }
+    }
+    private Component[] findAllFocusableComponents(Component[] result=null) {
+        if (focusable()) {
+            result ~= this;
+        }
+        foreach (child; children) {
+            result = child.findAllFocusableComponents(result);
+        }
+        return result;
     }
 }
 
@@ -683,7 +695,9 @@ class Button : Component
             return false;
         }
     }
-
+    override bool focusable() {
+        return true;
+    }
     override string toString()
     {
         return "Button";
@@ -919,6 +933,12 @@ class List(T, alias stringTransform) : Component
             return super.handleInput(input);
         }
     }
+    override bool focusable() {
+        return true;
+    }
+    override string toString() {
+        return "List";
+    }
 }
 
 struct Viewport
@@ -985,7 +1005,9 @@ class ScrollPane : Component
             return super.handleInput(input);
         }
     }
-
+    override bool focusable() {
+        return true;
+    }
     override void render(Context c)
     {
         auto child = children.front;
@@ -1092,7 +1114,7 @@ class Ui(State) : UiInterface
         roots ~= root;
         auto dimension = terminal.dimension;
         root.resize(0, 0, dimension.width, dimension.height);
-        root.focusComponents[0].requestFocus;
+        root.focusNext;
         return this;
     }
 
