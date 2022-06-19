@@ -1,4 +1,3 @@
 import unit_threaded;
-mixin runTestsMain!(
-    "tui",
-);
+
+mixin runTestsMain!("tui",);
