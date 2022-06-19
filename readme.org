@@ -8,11 +8,16 @@
 - signal handler for windowsize changes
 
 
-
 ** Todos
-*** IN-PROGRESS BUG for popups the underlying root does not "loos" focus atm
-*** TODO implement scrollview
-*** TODO implement ansi skipping drop and take
+*** DONE BUG for popups the underlying root does not "loos" focus atm
+CLOSED: [2022-06-19 Sun 22:58]
+- CLOSING NOTE [2022-06-19 Sun 22:58]
+*** DONE implement ScrollPane
+CLOSED: [2022-06-19 Sun 22:57]
+- CLOSING NOTE [2022-06-19 Sun 22:57]
+*** DONE implement ansi skipping drop and take
+CLOSED: [2022-06-19 Sun 22:58]
+- CLOSING NOTE [2022-06-19 Sun 22:58]
 *** DONE implement buffering of terminal output to reduce flickering
 CLOSED: [2022-06-16 Thu 23:22]
 - CLOSING NOTE [2022-06-16 Thu 23:22]

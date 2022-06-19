@@ -62,10 +62,13 @@ int main(string[] args) {
         });
     list2.selectionChanged.connect(&status.dataChanged);
     list1.select;
-    auto lists = new VSplit(20, list1, list2);
-    auto root = new HSplit(-1, lists, status);
+    auto leftSide = new VSplit(20, list1, list2);
+    auto rightSide = new ScrollPane(new Text("very long text that should please scroll around and when its done its done 11111111111 bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee "));
+    auto columns = new VSplit(60, leftSide, rightSide);
+    auto root = new HSplit(-1, columns, status);
     root.addToFocusComponents(list1);
     root.addToFocusComponents(list2);
+    root.addToFocusComponents(rightSide);
 
     ui.push(root);
     ui.resize;

@@ -16,3 +16,10 @@ configuration "tui-demo" {
   targetPath "out/exe"
   mainSourceFile "source/app.d"
 }
+
+configuration "unittest" {
+    dependency "unit-threaded" version="*"
+    mainSourceFile "source/ut.d"
+    excludedSourceFiles "src/main.d"
+    targetType "executable"
+}

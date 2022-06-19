@@ -18,7 +18,6 @@ auto next(Range)(Range r) {
 
 enum Operation : string
 {
-
     CURSOR_UP = "A",
     CURSOR_DOWN = "B",
     CURSOR_FORWARD = "C",
@@ -118,6 +117,8 @@ enum Key : string
 {
     up = [27, 91, 65],
     down = [27, 91, 66],
+    left = [27, 91, 67],
+    right = [27, 91, 68],
     /+
      codeYes = KEY_CODE_YES,
      min = KEY_MIN,
@@ -413,8 +414,6 @@ abstract class Component {
         focusComponentsRing = cycle(focusComponents);
     }
     void resize(int left, int top, int width, int height) {
-        import std.file : append; "key.log".append("%s.resize(%s, %s, %s, %s)\n".format(this, left, top, width, height));
-
         this.left = left;
         this.top = top;
         this.width = width;
@@ -481,12 +480,14 @@ class HSplit : Component {
         this.split = split;
     }
     override void resize(int left, int top, int width, int height) {
+        super.resize(left, top, width, height);
+
         int splitPos = split;
         if (split < 0) {
             splitPos = height+split;
         }
-        this.top.resize(left, top, width, splitPos);
-        this.bottom.resize(left, top+splitPos, width, height-splitPos);
+        this.top.resize(0, 0, width, splitPos);
+        this.bottom.resize(0, splitPos, width, height-splitPos);
     }
     override void render(Context context) {
         this.top.render(context.forChild(this.top));
@@ -506,13 +507,14 @@ class VSplit : Component {
         this.split = split;
     }
     override void resize(int left, int top, int width, int height) {
+        super.resize(left, top, width, height);
+
         int splitPos = split;
         if (split < 0) {
             splitPos = width + split;
         }
-        this.left.resize(left, top, splitPos, height);
-        this.right.resize(left+splitPos, top, width-split, height);
-        super.resize(left, top, width, height);
+        this.left.resize(0, 0, splitPos, height);
+        this.right.resize(splitPos, 0, width-split, height);
     }
     override void render(Context context) {
         left.render(context.forChild(left));
@@ -582,6 +584,61 @@ class Button : Component {
     }
 }
 
+string dropIgnoreAnsiEscapes(string s, int n) {
+    string result;
+    bool inColorAnsiEscape = false;
+    int count = 0;
+
+    if (n < 0) {
+        n = -n;
+        result = s;
+        for (int i=0; i<n; ++i) {
+            result = " " ~ result;
+        }
+        return result;
+    }
+
+    while (!s.empty) {
+        auto current = s.front;
+        if (current == 27) {
+            inColorAnsiEscape = true;
+            result ~= current;
+        } else {
+            if (inColorAnsiEscape) {
+                if (current == 'm') {
+                    inColorAnsiEscape = false;
+                }
+                result ~= current;
+            } else {
+                if (count >= n) {
+                    result ~= current;
+                }
+                count++;
+            }
+        }
+        s.popFront;
+    }
+    return result;
+}
+
+@("dropIgnoreAnsiEscapes/basic") unittest {
+    import unit_threaded;
+    "abc".dropIgnoreAnsiEscapes(1).should == "bc";
+}
+
+@("dropIgnoreAnsiEscapes/basicWithAnsi") unittest {
+    import unit_threaded;
+    "a\033[123mbcdefghijkl".dropIgnoreAnsiEscapes(3).should == "\033[123mdefghijkl";
+}
+
+@("dropIgnoreAnsiEscapes/dropAll") unittest {
+    import unit_threaded;
+    "abc".dropIgnoreAnsiEscapes(4).should == "";
+}
+@("dropIgnoreAnsiEscapes/negativeNumber") unittest {
+    import unit_threaded;
+    "abc".dropIgnoreAnsiEscapes(-1).should == " abc";
+}
 
 string takeIgnoreAnsiEscapes(string s, uint length) {
     string result;
@@ -614,7 +671,7 @@ string takeIgnoreAnsiEscapes(string s, uint length) {
     import unit_threaded;
     "hello world".takeIgnoreAnsiEscapes(5).should == "hello";
     "he\033[123mllo world\033[0m".takeIgnoreAnsiEscapes(5).should == "he\033[123mllo\033[0m";
-    "köstlin".takeIgnoreAnsiEscapes(7).should == "köstlin";
+    "köstlin".takeIgnoreAnsiEscapes(10).should == "köstlin";
 }
 
 class List(T, alias stringTransform) : Component
@@ -689,15 +746,14 @@ class List(T, alias stringTransform) : Component
     auto getSelection() {
         return model[scrollInfo.selection];
     }
-    override bool handlesInput() {
-        return true;
-    }
     override bool handleInput(KeyInput input) {
         switch (input.input) {
+        case "w":
         case "j":
         case Key.up:
             up();
             return true;
+        case "s":
         case "k":
         case Key.down:
             down();
@@ -705,6 +761,72 @@ class List(T, alias stringTransform) : Component
         default:
             return super.handleInput(input);
         }
+    }
+}
+
+struct Viewport {
+    int x;
+    int y;
+    int width;
+    int height;
+}
+
+class ScrollPane : Component {
+    Viewport viewport;
+    this(Component child) {
+        super([child]);
+    }
+    bool up() {
+        viewport.y++;
+        return true;
+    }
+    bool down() {
+        viewport.y = max(viewport.y-1, 0);
+        return true;
+    }
+    bool left() {
+        viewport.x++;
+        return true;
+    }
+    bool right() {
+        viewport.x = max(viewport.x-1, 0);
+        return true;
+    }
+    override bool handleInput(KeyInput input) {
+        switch (input.input) {
+        case "w":
+        case "j":
+        case Key.up:
+            return up();
+        case "s":
+        case "k":
+        case Key.down:
+            return down();
+        case "a":
+        case "h":
+        case Key.left:
+            return left();
+        case "d":
+        case "l":
+        case Key.right:
+            return right();
+        default:
+            return super.handleInput(input);
+        }
+    }
+    override void render(Context c) {
+        auto child = children.front;
+        child.render(c.forChild(child, viewport));
+        if (currentFocusedComponent == this) {
+            c.putString(0, 0, ">");
+        }
+    }
+    override void resize(int left, int top, int width, int height) {
+        super.resize(left, top, width, height);
+        viewport.width = width;
+        viewport.height = height;
+        auto child = children.front;
+        child.resize(0, 0, 1000, 1000);
     }
 }
 
@@ -724,21 +846,42 @@ class Context {
     int top;
     int width;
     int height;
+    Viewport viewport;
     this(Terminal terminal, int left, int top, int width, int height) {
         this.terminal = terminal;
         this.left = left;
         this.top = top;
         this.width = width;
         this.height = height;
+        this.viewport = Viewport(0, 0, width, height);
+    }
+    this(Terminal terminal, int left, int top, int width, int height, Viewport viewport) {
+        this.terminal = terminal;
+        this.left = left;
+        this.top = top;
+        this.width = width;
+        this.height = height;
+        this.viewport = viewport;
     }
     auto forChild(Component c) {
-        return new Context(terminal, c.left, c.top, c.width, c.height);
+        return new Context(terminal, this.left + c.left, this.top + c.top, c.width, c.height);
+    }
+     auto forChild(Component c, Viewport viewport) {
+        return new Context(terminal, this.left + c.left, this.top + c.top, c.width, c.height, viewport);
     }
     auto putString(int x, int y, string s) {
-        terminal.xy(left + x, top + y).putString(s.takeIgnoreAnsiEscapes(width));
+        int ypos = top + y + viewport.y;
+        if (ypos < 0 || ypos > viewport.height) {
+            return this;
+        }
+        terminal
+            .xy(left + x, ypos)
+            .putString(s.dropIgnoreAnsiEscapes(viewport.x)
+                        .takeIgnoreAnsiEscapes(viewport.width));
         return this;
     }
 }
+
 class Ui(State) : UiInterface {
     Terminal terminal;
     Component[] roots;
