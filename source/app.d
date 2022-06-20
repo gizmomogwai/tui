@@ -43,6 +43,12 @@ class DemoUi : Ui!(State)
     }
 }
 
+string longText() {
+    return iota(1, 100)
+        .map!(i => i.to!string.leftJustify(200, 'x')~i.to!string)
+        .joiner("\n")
+        .to!string;
+}
 int main(string[] args)
 {
     KeyInput keyInput;
@@ -71,7 +77,7 @@ int main(string[] args)
     list2.selectionChanged.connect(&status.dataChanged);
     list1.select;
     auto leftSide = new VSplit(20, list1, list2);
-    auto rightSide = new ScrollPane(new Text("very long text that should please scroll around and when its done its done 11111111111 bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee "));
+    auto rightSide = new ScrollPane(new MultilineText(longText));
     auto columns = new VSplit(60, leftSide, rightSide);
     auto root = new HSplit(-1, columns, status);
 

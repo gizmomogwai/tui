@@ -44,3 +44,6 @@ CLOSED: [2022-06-11 Sat 00:57]
 *** DONE implement proper event bubbling or somethign else (e.g. only the details view gets the events, or some signal slot thing)
 CLOSED: [2022-06-12 Sun 22:29]
 - CLOSING NOTE [2022-06-12 Sun 22:29]
+*** DONE implement multiline text
+CLOSED: [2022-06-20 Mon 23:33]
+- CLOSING NOTE [2022-06-20 Mon 23:33]

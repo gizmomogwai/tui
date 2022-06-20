@@ -653,11 +653,26 @@ class Text : Component
 
     override void render(Context context)
     {
-        context.putString(0, 0, content.takeIgnoreAnsiEscapes(width));
+        context.putString(0, 0, content);
     }
 
     override bool handlesInput()
     {
+        return false;
+    }
+}
+
+class MultilineText : Component {
+    string[] lines;
+    this(string content) {
+        lines = content.split("\n");
+    }
+    override void render(Context context) {
+        foreach (idx, line; lines) {
+            context.putString(0, cast(int)idx, line);
+        }
+    }
+    override bool handlesInput() {
         return false;
     }
 }
@@ -959,13 +974,13 @@ class ScrollPane : Component
 
     bool up()
     {
-        viewport.y++;
+        viewport.y = max(viewport.y -1 , 0);
         return true;
     }
 
     bool down()
     {
-        viewport.y = max(viewport.y - 1, 0);
+        viewport.y++;
         return true;
     }
 
@@ -1081,7 +1096,7 @@ class Context
 
     auto putString(int x, int y, string s)
     {
-        int ypos = top + y + viewport.y;
+        int ypos = top + y - viewport.y;
         if (ypos < 0 || ypos > viewport.height)
         {
             return this;
