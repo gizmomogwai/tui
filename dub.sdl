@@ -4,6 +4,8 @@ authors "Christian Koestlin"
 copyright "Copyright (c) 2022, Christian Koestlin"
 license "MIT"
 
+dflags "-dip1000"
+
 configuration "library" {
   targetType "library"
   targetPath "out/lib"

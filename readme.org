@@ -1,6 +1,6 @@
 #+TODO: TODO IN-PROGRESS | DONE NOT
 * Simple tui lib for dlang
-- no ncurses: http://xn--rpa.cc/irl/term.html
+- no ncurses: http://xn--rpa.cc/irl/term.html / https://web.archive.org/web/20220520031528/http://xn--rpa.cc/irl/term.html
   - (easier to handle colors e.g.)
   - no dependency
 - KEY_RESIZE to react on terminal resizes

@@ -5,7 +5,13 @@ import core.sys.posix.unistd;
 import core.sys.posix.sys.ioctl;
 import core.stdc.stdio;
 import core.stdc.ctype;
-import std; // import std.signals is somehow incomplete
+import std.signals; // import std.signals : Signal does not work ...
+import std.typecons : Tuple;
+import std.array : appender;
+import std.range : empty, front, popFront, cycle;
+import std.exception : errnoEnforce, enforce;
+import std.string : join, split, format;
+import std.algorithm : countUntil, find, max;
 import std.conv : to;
 
 alias Position = Tuple!(int, "x", int, "y");
