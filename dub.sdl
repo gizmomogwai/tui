@@ -7,21 +7,22 @@ license "MIT"
 dflags "-dip1000"
 
 configuration "library" {
-  targetType "library"
-  targetPath "out/lib"
-  excludedSourceFiles "source/app.d"
+    targetType "library"
+    targetPath "out/lib"
+    excludedSourceFiles "source/app.d" "source/testsuite.d"
 }
 
 configuration "tui-demo" {
-  targetType "executable"
-  targetName "tui-demo"
-  targetPath "out/exe"
-  mainSourceFile "source/app.d"
+    targetType "executable"
+    targetName "tui-demo"
+    targetPath "out/exe"
+    mainSourceFile "source/app.d"
+    excludedSourceFiles "source/testsuite.d"
 }
 
 configuration "unittest" {
-    dependency "unit-threaded" version="*"
-    mainSourceFile "source/ut.d"
-    excludedSourceFiles "src/main.d"
     targetType "executable"
+    dependency "unit-threaded" version="2.0.4"
+    mainSourceFile "source/testsuite.d"
+    excludedSourceFiles "src/main.d"
 }
