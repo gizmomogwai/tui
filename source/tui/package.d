@@ -17,7 +17,7 @@ import std.conv : to;
 alias Position = Tuple!(int, "x", int, "y");
 alias Dimension = Tuple!(int, "width", int, "height"); /// https://en.wikipedia.org/wiki/ANSI_escape_code
 
-auto next(Range)(Range r)
+@safe auto next(Range)(Range r)
 {
     r.popFront;
     return r.front;
