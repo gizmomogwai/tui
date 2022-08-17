@@ -91,7 +91,6 @@ class Terminal
         wDirect(State.CURSOR.to(Mode.HIGH), "Cannot show cursor");
 
         (tcsetattr(1, TCSANOW, &originalState) == 0).errnoEnforce("Cannot set original termios state");
-        import std.stdio : writeln; writeln("cleanup done");
     }
 
     auto putString(string s)
