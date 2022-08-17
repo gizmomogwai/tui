@@ -337,20 +337,7 @@ enum Key : string
  vertical = A_VERTICAL,
  }
 
- void activate(Attributes attributes)
- {
- (attributes & Attributes.bold) ? deimos.ncurses.curses.attron(A_BOLD)
- : deimos.ncurses.curses.attroff(A_BOLD);
- (attributes & Attributes.reverse) ? deimos.ncurses.curses.attron(A_REVERSE)
- : deimos.ncurses.curses.attroff(A_REVERSE);
- (attributes & Attributes.standout) ? deimos.ncurses.curses.attron(A_STANDOUT)
- : deimos.ncurses.curses.attroff(A_STANDOUT);
- (attributes & Attributes.underline) ? deimos.ncurses.curses.attron(A_UNDERLINE)
- : deimos.ncurses.curses.attroff(A_UNDERLINE);
- }
-
-
- +/
+  +/
 /// either a special key like arrow or backspace
 /// or an utf-8 string (e.g. ä is already 2 bytes in an utf-8 string)
 struct KeyInput
