@@ -142,7 +142,7 @@ class Terminal
 
     immutable(KeyInput) getInput()
     {
-        char[10] buffer;
+        char[3] buffer;
         auto count = core.sys.posix.unistd.read(1, &buffer, buffer.length);
         (count != -1).errnoEnforce("Cannot read next input");
         return KeyInput.fromText(buffer[0 .. count].idup);
