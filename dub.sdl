@@ -17,14 +17,15 @@ configuration "library" {
 configuration "tui-demo" {
     targetType "executable"
     targetName "tui-demo"
-    targetPath "out/exe"
+    targetPath "out/main"
     mainSourceFile "source/app.d"
     excludedSourceFiles "source/testsuite.d"
 }
 
 configuration "unittest" {
     targetType "executable"
-    dependency "unit-threaded" version="2.0.4"
+    targetPath "out/test"
+    dependency "unit-threaded" version="~>2.1.0"
     mainSourceFile "source/testsuite.d"
     excludedSourceFiles "src/main.d"
 }
