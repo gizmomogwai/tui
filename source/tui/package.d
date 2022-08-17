@@ -13,6 +13,7 @@ import std.exception : errnoEnforce, enforce;
 import std.string : join, split, format;
 import std.algorithm : countUntil, find, max;
 import std.conv : to;
+import colored : forceStyle, Style;
 
 alias Position = Tuple!(int, "x", int, "y");
 alias Dimension = Tuple!(int, "width", int, "height"); /// https://en.wikipedia.org/wiki/ANSI_escape_code
@@ -73,29 +74,45 @@ class Terminal
     this()
     {
         (tcgetattr(1, &originalState) == 0).errnoEnforce("Cannot get termios");
-        termios newState = originalState;
-        newState.c_lflag &= ~(ECHO | ICANON);
-        (tcsetattr(1, TCSAFLUSH, &newState) == 0).errnoEnforce("Cannot set termios");
 
-        w(State.ALTERNATE_BUFFER.to(Mode.HIGH), "Cannot switch to alternate buffer");
-        w(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
-        w(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
+        termios newState = originalState;
+        newState.c_lflag &= ~ECHO & ~ICANON;
+        (tcsetattr(1, TCSAFLUSH, &newState) == 0).errnoEnforce("Cannot set new termios state");
+
+        wDirect(State.ALTERNATE_BUFFER.to(Mode.HIGH), "Cannot switch to alternate buffer");
+        wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
+        wDirect(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
+    }
+
+    ~this()
+    {
+        wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear alternate buffer");
+        wDirect(State.ALTERNATE_BUFFER.to(Mode.LOW), "Cannot switch to normal buffer");
+        wDirect(State.CURSOR.to(Mode.HIGH), "Cannot show cursor");
+
+        (tcsetattr(1, TCSANOW, &originalState) == 0).errnoEnforce("Cannot set original termios state");
+        import std.stdio : writeln; writeln("cleanup done");
     }
 
     auto putString(string s)
     {
-        w(s, "Cannot write string");
+        w(s);
         return this;
     }
 
     auto xy(int x, int y)
     {
         w(Operation.CURSOR_POSITION.execute((y + 1).to!string, (x + 1)
-                .to!string), "Cannot position cursor");
+                .to!string));
         return this;
     }
 
-    final void w(string data, lazy string errorMessage)
+    final void wDirect(string data, lazy string errorMessage)
+    {
+        (core.sys.posix.unistd.write(2, data.ptr, data.length) == data.length).errnoEnforce(errorMessage);
+    }
+
+    final void w(string data)
     {
         buffer.put(cast(char[]) data);
     }
@@ -103,7 +120,7 @@ class Terminal
     auto clear()
     {
         buffer.clear();
-        w(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
+        w(Operation.CLEAR_TERMINAL.execute);
         return this;
     }
 
@@ -115,14 +132,6 @@ class Terminal
         return this;
     }
 
-    ~this()
-    {
-        auto data = State.ALTERNATE_BUFFER.to(Mode.HIGH) ~ Operation.CLEAR_TERMINAL.execute ~ State.CURSOR.to(
-                Mode.HIGH) ~ State.ALTERNATE_BUFFER.to(Mode.LOW);
-        (core.sys.posix.unistd.write(2, data.ptr, data.length) == data.length).errnoEnforce(
-                "Cannot cleanup terminal");
-        (tcsetattr(1, TCSANOW, &originalState) == 0).errnoEnforce("Cannot set termios");
-    }
 
     Dimension dimension()
     {
@@ -131,7 +140,7 @@ class Terminal
         return Dimension(ws.ws_col, ws.ws_row);
     }
 
-    KeyInput getInput()
+    immutable(KeyInput) getInput()
     {
         char[10] buffer;
         auto count = core.sys.posix.unistd.read(1, &buffer, buffer.length);
@@ -362,12 +371,12 @@ struct KeyInput
         this.bytes = bytes;
     }
 
-    static KeyInput fromText(string s)
+    static auto fromText(string s)
     {
-        return KeyInput(COUNT++, s);
+        return cast(immutable)KeyInput(COUNT++, s);
     }
 
-    static KeyInput fromBytes(byte[] bytes)
+    static auto fromBytes(byte[] bytes)
     {
         return KeyInput(COUNT++, bytes);
     }
@@ -887,17 +896,28 @@ class List(T, alias stringTransform) : Component
         this.model = model;
         this.scrollInfo = ScrollInfo(0, 0);
     }
+    T[] delegate() getData;
+    this(T[] delegate() getData)
+    {
+        this.getData = getData;
+        this.scrollInfo = ScrollInfo(0, 0);
+    }
 
     override void render(Context context)
     {
+        if (getData)
+        {
+            model = getData();
+        }
         for (int i = 0; i < height; ++i)
         {
-            auto index = i + scrollInfo.offset;
+            const index = i + scrollInfo.offset;
             if (index >= model.length)
                 return;
-            auto text = (((index == scrollInfo.selection)
-                    && (currentFocusedComponent == this)) ? "> %s" : "  %s").format(
-                    stringTransform(model[index]));
+            const selected = (index == scrollInfo.selection) && (currentFocusedComponent == this);
+            auto text = "%s %s"
+                .format(selected ? ">" : " ", stringTransform(model[index]));
+            text = selected ? text.forceStyle(Style.reverse) : text;
             context.putString(0, i, text);
         }
     }
@@ -954,9 +974,11 @@ class List(T, alias stringTransform) : Component
             return super.handleInput(input);
         }
     }
+
     override bool focusable() {
         return true;
     }
+
     override string toString() {
         return "List";
     }
@@ -1088,7 +1110,10 @@ class Context
         this.height = height;
         this.viewport = viewport;
     }
-
+    override string toString()
+    {
+        return "Context(left=%s, top=%s, width=%s, height=%s, viewport=%s)".format(left, top, width, height, viewport);
+    }
     auto forChild(Component c)
     {
         return new Context(terminal, this.left + c.left, this.top + c.top, c.width, c.height);
@@ -1102,18 +1127,22 @@ class Context
 
     auto putString(int x, int y, string s)
     {
-        int ypos = top + y - viewport.y;
-        if (ypos < 0 || ypos > viewport.height)
+        int scrolledY = y - viewport.y;
+        if (scrolledY < 0) {
+            return this;
+        }
+        if (scrolledY > viewport.height)
         {
             return this;
         }
-        terminal.xy(left + x, ypos).putString(s.dropIgnoreAnsiEscapes(viewport.x)
+        int screenYpos = scrolledY + top;
+        terminal.xy(left + x, screenYpos).putString(s.dropIgnoreAnsiEscapes(viewport.x)
                 .takeIgnoreAnsiEscapes(viewport.width));
         return this;
     }
 }
 
-class Ui(State) : UiInterface
+class Ui : UiInterface
 {
     Terminal terminal;
     Component[] roots;
@@ -1156,8 +1185,12 @@ class Ui(State) : UiInterface
             terminal.clear;
             foreach (root; roots)
             {
-                scope context = new Context(terminal, root.left, root.top,
-                        root.width, root.height);
+                scope context = new Context(
+                    terminal,
+                    root.left,
+                    root.top,
+                    root.width,
+                    root.height);
                 root.render(context);
             }
             terminal.flip;
@@ -1190,6 +1223,12 @@ class Ui(State) : UiInterface
             }
         }
     }
+    void handleInput(KeyInput input)
+    {
+        roots[$-1].handleInput(input);
+    }
+}
 
-    abstract State handleKey(KeyInput input, State state);
+struct Refresh
+{
 }
