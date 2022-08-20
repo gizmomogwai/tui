@@ -11,7 +11,7 @@ import std.array : appender;
 import std.range : empty, front, popFront, cycle;
 import std.exception : errnoEnforce, enforce;
 import std.string : join, split, format;
-import std.algorithm : countUntil, find, max;
+import std.algorithm : countUntil, find, max, min;
 import std.conv : to;
 import colored : forceStyle, Style;
 
@@ -116,9 +116,9 @@ class Terminal
         buffer.put(cast(char[]) data);
     }
 
-    auto clear()
+    auto clearBuffer()
     {
-        buffer.clear();
+        buffer.clear;
         w(Operation.CLEAR_TERMINAL.execute);
         return this;
     }
@@ -843,6 +843,11 @@ string takeIgnoreAnsiEscapes(string s, uint length)
     "köstlin".takeIgnoreAnsiEscapes(10).should == "köstlin";
 }
 
+int clipTo(int v, size_t maximum)
+{
+    return min(v, maximum);
+}
+
 class List(T, alias stringTransform) : Component
 {
     T[] model;
@@ -895,6 +900,12 @@ class List(T, alias stringTransform) : Component
         {
             model = getData();
         }
+        scrollInfo.offset = scrollInfo.offset.clipTo(model.length-1);
+        if (model.length-1 < context.height)
+        {
+            scrollInfo.offset = 0;
+        }
+        scrollInfo.selection = scrollInfo.selection.clipTo(model.length-1);
         for (int i = 0; i < height; ++i)
         {
             const index = i + scrollInfo.offset;
@@ -946,13 +957,9 @@ class List(T, alias stringTransform) : Component
     {
         switch (input.input)
         {
-        case "w":
-        case "j":
         case Key.up:
             up();
             return true;
-        case "s":
-        case "k":
         case Key.down:
             down();
             return true;
@@ -1168,7 +1175,7 @@ class Ui : UiInterface
     {
         try
         {
-            terminal.clear;
+            terminal.clearBuffer();
             foreach (root; roots)
             {
                 scope context = new Context(

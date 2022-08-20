@@ -6,7 +6,7 @@ license "MIT"
 
 dependency "colored" version="*"
 
-dflags "-dip1000"
+// dflags "-dip1000"
 
 configuration "library" {
     targetType "library"
