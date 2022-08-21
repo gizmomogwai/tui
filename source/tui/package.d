@@ -851,6 +851,12 @@ int clipTo(int v, size_t maximum)
 class List(T, alias stringTransform) : Component
 {
     T[] model;
+    T[] delegate() getData;
+
+    ScrollInfo scrollInfo;
+    mixin Signal!(T) selectionChanged;
+    bool vMirror;
+
     struct ScrollInfo
     {
         int selection;
@@ -880,18 +886,17 @@ class List(T, alias stringTransform) : Component
         }
     }
 
-    ScrollInfo scrollInfo;
-    mixin Signal!(T) selectionChanged;
-    this(T[] model)
+    this(T[] model, bool vMirror=false)
     {
         this.model = model;
         this.scrollInfo = ScrollInfo(0, 0);
+        this.vMirror = vMirror;
     }
-    T[] delegate() getData;
-    this(T[] delegate() getData)
+    this(T[] delegate() getData, bool vMirror = false)
     {
         this.getData = getData;
         this.scrollInfo = ScrollInfo(0, 0);
+        this.vMirror = vMirror;
     }
 
     override void render(Context context)
@@ -915,11 +920,19 @@ class List(T, alias stringTransform) : Component
             auto text = "%s %s"
                 .format(selected ? ">" : " ", stringTransform(model[index]));
             text = selected ? text.forceStyle(Style.reverse) : text;
-            context.putString(0, i, text);
+            context.putString(0, vMirror ? height-1 - i : i, text);
         }
     }
 
     void up()
+    {
+        vMirror ? _down : _up;
+    }
+    void down()
+    {
+        vMirror ? _up : _down;
+    }
+    void _up()
     {
         if (model.empty)
         {
@@ -929,7 +942,7 @@ class List(T, alias stringTransform) : Component
         selectionChanged.emit(model[scrollInfo.selection]);
     }
 
-    void down()
+    void _down()
     {
         if (model.empty)
         {
