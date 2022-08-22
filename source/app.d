@@ -1,4 +1,4 @@
-import tui;
+import tui : Ui, Text, KeyInput, List, VSplit, ScrollPane, HSplit, Terminal, Button, MultilineText;
 import std;
 
 class Text2 : Text
@@ -11,7 +11,6 @@ class Text2 : Text
     void dataChanged(int i)
     {
         import std.file : append;
-        "key.log".append("datachanged\n");
         this.content = "Selection changed to %s".format(i);
     }
 }
@@ -21,39 +20,18 @@ struct State
     bool finished;
 }
 
-class DemoUi : Ui!(State)
-{
-    this(Terminal terminal)
-    {
-        super(terminal);
-    }
-
-    override State handleKey(KeyInput input, State state)
-    {
-        switch (input.input)
-        {
-        case "\x1B":
-            state.finished = true;
-            break;
-        default:
-            roots[$ - 1].handleInput(input);
-            break;
-        }
-        return state;
-    }
-}
-
 string longText() {
     return iota(1, 100)
         .map!(i => i.to!string.leftJustify(200, 'x')~i.to!string)
         .joiner("\n")
         .to!string;
 }
+
 int main(string[] args)
 {
     KeyInput keyInput;
     scope terminal = new Terminal;
-    auto ui = new DemoUi(terminal);
+    auto ui = new Ui(terminal);
     State state = {finished: false,};
 
     auto status = new Text2("The current state");
@@ -79,7 +57,8 @@ int main(string[] args)
     auto leftSide = new VSplit(20, list1, list2);
     auto rightSide = new ScrollPane(new MultilineText(longText));
     auto columns = new VSplit(60, leftSide, rightSide);
-    auto root = new HSplit(-1, columns, status);
+    auto top = new HSplit(5, new MultilineText("1 11111111111111111111\n2 22222222222222222222\n3 33333333333333333333\n4 44444444444444444444\n5 55555555555555555555"), columns);
+    auto root = new HSplit(-5, top, status);
 
     ui.push(root);
     ui.resize;
@@ -87,7 +66,7 @@ int main(string[] args)
     {
         ui.render;
         auto input = terminal.getInput();
-        state = ui.handleKey(input, state);
+        ui.handleInput(cast()input);
     }
     return 0;
 }
