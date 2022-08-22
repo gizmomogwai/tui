@@ -414,10 +414,10 @@ abstract class Component
 
     InputHandler inputHandler;
 
-    int left;
-    int top;
-    int width;
-    int height;
+    int left; /// Left position of the component relative to the parent
+    int top; /// Top position of the component relative to the parent
+    int width; /// Width of the component
+    int height; /// Height of the component
 
     this(Component[] children = null)
     {
@@ -1008,7 +1008,7 @@ class ScrollPane : Component
 
     bool up()
     {
-        viewport.y = max(viewport.y -1 , 0);
+        viewport.y = max(viewport.y - 1, 0);
         return true;
     }
 
@@ -1127,8 +1127,13 @@ class Context
 
     auto forChild(Component c, Viewport viewport)
     {
-        return new Context(terminal, this.left + c.left, this.top + c.top,
-                c.width, c.height, viewport);
+        return new Context(
+            terminal,
+            this.left + c.left,
+            this.top + c.top,
+            c.width,
+            c.height,
+            viewport);
     }
 
     auto putString(int x, int y, string s)
@@ -1137,13 +1142,17 @@ class Context
         if (scrolledY < 0) {
             return this;
         }
-        if (scrolledY > viewport.height)
+        if (scrolledY >= viewport.height)
         {
             return this;
         }
-        int screenYpos = scrolledY + top;
-        terminal.xy(left + x, screenYpos).putString(s.dropIgnoreAnsiEscapes(viewport.x)
+        // dfmt off
+        terminal
+            .xy(left + x, top + scrolledY)
+            .putString(
+                s.dropIgnoreAnsiEscapes(viewport.x)
                 .takeIgnoreAnsiEscapes(viewport.width));
+        // dfmt on
         return this;
     }
 }
