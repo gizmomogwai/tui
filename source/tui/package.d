@@ -1,19 +1,20 @@
 module tui;
 
+import colored : forceStyle, Style;
+import core.stdc.ctype;
+import core.stdc.stdio;
+import core.sys.posix.sys.ioctl;
 import core.sys.posix.termios;
 import core.sys.posix.unistd;
-import core.sys.posix.sys.ioctl;
-import core.stdc.stdio;
-import core.stdc.ctype;
-import std.signals; // import std.signals : Signal does not work ...
-import std.typecons : Tuple;
-import std.array : appender;
-import std.range : empty, front, popFront, cycle;
-import std.exception : errnoEnforce, enforce;
-import std.string : join, split, format;
 import std.algorithm : countUntil, find, max, min;
+import std.array : appender;
 import std.conv : to;
-import colored : forceStyle, Style;
+import std.exception : errnoEnforce, enforce;
+import std.math.algebraic : abs;
+import std.range : empty, front, popFront, cycle;
+import std.signals; // import std.signals : Signal does not work ...
+import std.string : join, split, format;
+import std.typecons : Tuple;
 
 alias Position = Tuple!(int, "x", int, "y");
 alias Dimension = Tuple!(int, "width", int, "height"); /// https://en.wikipedia.org/wiki/ANSI_escape_code
@@ -678,10 +679,126 @@ class MultilineText : Component {
     }
 }
 
+class Canvas : Component
+{
+    class Graphics
+    {
+        import std.uni : unicode;
+        import std.array : array;
+        static braille = unicode.Braille.byCodepoint.array;
+        int[] pixels;
+        this()
+        {
+            pixels = new int[width * height];
+        }
+        int getWidth()
+        {
+            return width * 2;
+        }
+        int getHeight()
+        {
+            return height * 4;
+        }
+        // see https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm#All_cases
+        void line(const(Position) from, const(Position) to)
+        {
+            const int dx = (to.x - from.x).abs;
+            const int stepX= from.x < to.x ? 1 : -1;
+
+            const int dy = -(to.y - from.y).abs;
+            const int stepY = from.y < to.y ? 1 : -1;
+
+            int error = dx + dy;
+            int x = from.x;
+            int y = from.y;
+            while (true)
+            {
+                set(Position(x, y));
+                if (x == to.x && y == to.y)
+                {
+                    break;
+                }
+                const e2 = 2 * error;
+                if (e2 >= dy)
+                {
+                    if (x == to.x)
+                    {
+                        break;
+                    }
+                    error += dy;
+                    x += stepX;
+                }
+                if (e2 <= dx)
+                {
+                    if (y ==to.y)
+                    {
+                        break;
+                    }
+                    error += dx;
+                    y += stepY;
+                }
+            }
+        }
+        // x and y in braille coords
+        void set(const(Position) p)
+        {
+            enforce(p.x < getWidth());
+            enforce(p.y < getHeight());
+            enforce(p.x >= 0);
+            enforce(p.y >= 0);
+            // bit nr
+            // 0 3
+            // 1 4
+            // 2 5
+            // 6 7
+            int xIdx = p.x/2;
+            int yIdx = p.y/4;
+
+            int brailleX = p.x%2;
+            int brailleY = p.y%4;
+            static brailleBits = [0, 1, 2, 6, 3, 4, 5, 7];
+            int idx = xIdx + yIdx*width;
+            pixels[idx] |= 1 << brailleBits[brailleY + brailleX*4];
+        }
+        void render(Context context)
+        {
+            for (int j=0; j<height; ++j)
+            {
+                for (int i=0; i<width; ++i)
+                {
+                    const idx = i + j*width;
+                    const p = pixels[idx];
+                    if (p != 0)
+                    {
+                        context.putString(i, j, "%s".format(braille[p]));
+                    }
+                }
+            }
+        }
+    }
+    alias Painter = void delegate(Canvas.Graphics, Context);
+    Painter painter;
+    this(Painter painter)
+    {
+        this.painter = painter;
+    }
+    override void render(Context context)
+    {
+        scope g = new Graphics();
+        painter(g, context);
+        g.render(context);
+    }
+    override bool handlesInput()
+    {
+        return false;
+    }
+}
+
 class Button : Component
 {
     string text;
     ButtonHandler pressed;
+
     this(string text, ButtonHandler pressed)
     {
         this.text = text;
