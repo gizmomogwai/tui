@@ -29,10 +29,17 @@ string longText() {
 
 int main(string[] args)
 {
+    if (args.length < 2)
+    {
+        stderr.writeln("Usage: %s demo|canvas".format(args[0]));
+        return 1;
+    }
     KeyInput keyInput;
     scope terminal = new Terminal;
     auto ui = new Ui(terminal);
     State state = {finished: false,};
+    if (args[1] == "demo")
+    {
     auto canvas = new Canvas((Canvas.Graphics graphics, Context context) {
             static int dx = 1;
             static int x = 0;
@@ -91,6 +98,21 @@ int main(string[] args)
     auto root = new HSplit(-5, top, status);
 
     ui.push(root);
+    }
+    else if (args[1] == "canvas")
+    {
+        auto root = new Canvas((Canvas.Graphics graphics, Context context)
+                               {
+                                   static float rad = 0;
+                                   const centerX = graphics.getWidth / 2;
+                                   const centerY = graphics.getHeight / 2;
+                                   const radius = min(graphics.getWidth / 2-1, graphics.getHeight/2-1);
+                                   rad += 0.01;
+                                   graphics.line(Position(centerX, centerY),
+                                                 Position(centerX + cast(int)(radius * cos(rad)), centerY+cast(int)(radius * sin(rad))));
+                               });
+        ui.push(root);
+    }
     ui.resize;
     while (!state.finished)
     {

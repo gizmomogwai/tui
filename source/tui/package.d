@@ -514,6 +514,10 @@ abstract class Component
         if (parent is null)
         {
             auto components = findAllFocusableComponents();
+            if (components.empty)
+                {
+                    return;
+                    }
             if (currentFocusedComponent is null) {
                 components.front.requestFocus;
             } else {
@@ -742,10 +746,10 @@ class Canvas : Component
         // x and y in braille coords
         void set(const(Position) p)
         {
-            enforce(p.x < getWidth());
-            enforce(p.y < getHeight());
-            enforce(p.x >= 0);
-            enforce(p.y >= 0);
+            enforce(p.x < getWidth(), "x: %s needs to be smaller than %s".format(p.x, getWidth));
+            enforce(p.y < getHeight(), "y: %s needs to be smaller than %s".format(p.y, getHeight));
+            enforce(p.x >= 0, "x: %s needs to be >= 0".format(p.x));
+            enforce(p.y >= 0, "y: %s needs to be >= 0".format(p.y));
             // bit nr
             // 0 3
             // 1 4
