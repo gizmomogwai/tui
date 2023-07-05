@@ -1,5 +1,10 @@
 #+TODO: TODO IN-PROGRESS | DONE NOT
 * Simple tui lib for dlang
+** Demos
+- 
+- [[https://asciinema.org/a/594802][Canvas]]
+
+** Features
 - no ncurses: http://xn--rpa.cc/irl/term.html / https://web.archive.org/web/20220520031528/http://xn--rpa.cc/irl/term.html
   - (easier to handle colors e.g.)
   - no dependency
@@ -7,43 +12,26 @@
 - ansi colors are nice, but hard for clipping
 - signal handler for windowsize changes
 
-
 ** Todos
 *** DONE BUG for popups the underlying root does not "loos" focus atm
-CLOSED: [2022-06-19 Sun 22:58]
-- CLOSING NOTE [2022-06-19 Sun 22:58]
 *** DONE implement ScrollPane
-CLOSED: [2022-06-19 Sun 22:57]
-- CLOSING NOTE [2022-06-19 Sun 22:57]
 *** DONE implement ansi skipping drop and take
-CLOSED: [2022-06-19 Sun 22:58]
-- CLOSING NOTE [2022-06-19 Sun 22:58]
 *** DONE implement buffering of terminal output to reduce flickering
-CLOSED: [2022-06-16 Thu 23:22]
-- CLOSING NOTE [2022-06-16 Thu 23:22]
-- CLOSING NOTE [2022-06-13 Mon 23:43]
-
 *** DONE implement popups
 CLOSED: [2022-06-17 Fri 23:25]
 - CLOSING NOTE [2022-06-17 Fri 23:25]
 several roots ... focus goes only to the topmost
 *** NOT introduce container
 *** DONE implement arrow keys
-CLOSED: [2022-06-15 Wed 23:03]
-- CLOSING NOTE [2022-06-15 Wed 23:03]
 *** DONE implement automatic focus strategy
 CLOSED: [2022-06-19 Sun 23:26]
 - CLOSING NOTE [2022-06-19 Sun 23:26]
-tiefensuche nach focusierbaren compnenten und cycle.next
+depth first search for focusable component and cycle.next
 *** DONE for history make redraw not always relayout
 CLOSED: [2022-06-05 Sun 12:08]
-- CLOSING NOTE [2022-06-05 Sun 12:08]
 *** DONE implement -int splits for vsplit
 CLOSED: [2022-06-11 Sat 00:57]
-- CLOSING NOTE [2022-06-11 Sat 00:57]
 *** DONE implement proper event bubbling or somethign else (e.g. only the details view gets the events, or some signal slot thing)
 CLOSED: [2022-06-12 Sun 22:29]
-- CLOSING NOTE [2022-06-12 Sun 22:29]
 *** DONE implement multiline text
 CLOSED: [2022-06-20 Mon 23:33]
-- CLOSING NOTE [2022-06-20 Mon 23:33]
