@@ -16,6 +16,11 @@ import std.signals; // import std.signals : Signal does not work ...
 import std.string : join, split, format;
 import std.typecons : Tuple;
 
+version (unittest)
+{
+    import unit_threaded;
+}
+
 alias Position = Tuple!(int, "x", int, "y");
 alias Dimension = Tuple!(int, "width", int, "height"); /// https://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -23,6 +28,13 @@ alias Dimension = Tuple!(int, "width", int, "height"); /// https://en.wikipedia.
 {
     r.popFront;
     return r.front;
+}
+
+@("next") unittest
+{
+    auto range = [1, 2, 3];
+    range.next.should == 2;
+    range.next.should == 2;
 }
 
 enum Operation : string
@@ -50,11 +62,6 @@ enum Mode : string
 {
     LOW = "l",
     HIGH = "h",
-}
-
-string execute(Operation operation)
-{
-    return "\x1b[" ~ operation;
 }
 
 string execute(Operation operation, string[] args...)
@@ -1351,12 +1358,10 @@ class Ui : UiInterface
 
     void resize()
     {
-        with (terminal.dimension)
+        auto dimension = terminal.dimension;
+        foreach (root; roots)
         {
-            foreach (root; roots)
-            {
-                root.resize(0, 0, width, height);
-            }
+            root.resize(0, 0, dimension.width, dimension.height);
         }
     }
     void handleInput(KeyInput input)
