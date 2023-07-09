@@ -445,7 +445,7 @@ abstract class Component
         }
     }
 
-    auto setInputHandler(InputHandler inputHandler)
+    void setInputHandler(InputHandler inputHandler)
     {
         this.inputHandler = inputHandler;
     }
@@ -458,7 +458,7 @@ abstract class Component
         this.height = height;
     }
 
-    auto setParent(Component parent)
+    void setParent(Component parent)
     {
         this.parent = parent;
     }
@@ -1033,12 +1033,12 @@ class List(T, alias stringTransform) : Component
         {
             model = getData();
         }
-        scrollInfo.offset = scrollInfo.offset.clipTo(model.length-1);
-        if (model.length-1 < context.height)
+        scrollInfo.offset = scrollInfo.offset.clipTo(model.length + -1);
+        if (model.length + -1 < context.height)
         {
             scrollInfo.offset = 0;
         }
-        scrollInfo.selection = scrollInfo.selection.clipTo(model.length-1);
+        scrollInfo.selection = scrollInfo.selection.clipTo(model.length + -1);
         for (int i = 0; i < height; ++i)
         {
             const index = i + scrollInfo.offset;

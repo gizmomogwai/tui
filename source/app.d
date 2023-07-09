@@ -34,13 +34,12 @@ int main(string[] args)
         stderr.writeln("Usage: %s demo|canvas".format(args[0]));
         return 1;
     }
-    KeyInput keyInput;
     scope terminal = new Terminal;
     auto ui = new Ui(terminal);
     State state = {finished: false,};
     if (args[1] == "demo")
     {
-    auto canvas = new Canvas((Canvas.Graphics graphics, Context context) {
+    auto canvas = new Canvas((Canvas.Graphics graphics, Context) {
             static int dx = 1;
             static int x = 0;
             graphics.line(Position(0, 0), Position(x, graphics.getHeight-1));
@@ -101,7 +100,7 @@ int main(string[] args)
     }
     else if (args[1] == "canvas")
     {
-        auto root = new Canvas((Canvas.Graphics graphics, Context context)
+        auto root = new Canvas((Canvas.Graphics graphics, Context)
                                {
                                    static float rad = 0;
                                    const centerX = graphics.getWidth / 2;
