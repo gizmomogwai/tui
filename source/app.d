@@ -128,7 +128,7 @@ int main(string[] args)
     
     signal(2, &ctrlC);
     ui.resize;
-    while (true)
+    while (!state.finished)
     {
         ui.render;
         auto input = terminal.getInput();
