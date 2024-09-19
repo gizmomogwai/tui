@@ -79,6 +79,10 @@ class Terminal
 {
     termios originalState;
     auto buffer = appender!(char[])();
+    int[2] pipeDescriptors;
+    int ctrlCSignalFD() {
+        return pipeDescriptors[1];
+    }
     this()
     {
         (tcgetattr(1, &originalState) == 0).errnoEnforce("Cannot get termios");
@@ -90,6 +94,9 @@ class Terminal
         wDirect(State.ALTERNATE_BUFFER.to(Mode.HIGH), "Cannot switch to alternate buffer");
         wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
         wDirect(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
+        import core.sys.posix.unistd : pipe;
+        auto result = pipe(pipeDescriptors);
+        (result != -1).enforce("Cannot create pipe");
     }
 
     ~this()
@@ -99,6 +106,9 @@ class Terminal
         wDirect(State.CURSOR.to(Mode.HIGH), "Cannot show cursor");
 
         (tcsetattr(1, TCSANOW, &originalState) == 0).errnoEnforce("Cannot set original termios state");
+        import core.sys.posix.unistd : close;
+        close(pipeDescriptors[0]);
+        close(pipeDescriptors[1]);
     }
 
     auto putString(string s)
@@ -149,10 +159,33 @@ class Terminal
 
     immutable(KeyInput) getInput()
     {
-        char[3] buffer;
-        auto count = core.sys.posix.unistd.read(1, &buffer, buffer.length);
-        (count != -1).errnoEnforce("Cannot read next input");
-        return KeyInput.fromText(buffer[0 .. count].idup);
+        import core.sys.posix.poll;
+        pollfd[2] pfds;
+        pfds[0].fd = 1;
+        pfds[0].events = POLLIN;
+        pfds[0].revents = 0;
+
+        pfds[1].fd = pipeDescriptors[0];
+        pfds[1].events = POLLIN;
+        pfds[1].revents = 0;
+
+        auto result = poll(pfds.ptr, 2, -1);
+
+        if (result > 0) {
+            if (pfds[0].revents > 0) {
+                char[3] buffer;
+                auto count = core.sys.posix.unistd.read(1, &buffer, buffer.length);
+                (count != -1).errnoEnforce("Cannot read next input");
+                return KeyInput.fromText(buffer[0 .. count].idup);
+            }
+
+            if (pfds[1].revents > 0) {
+                import core.sys.posix.unistd : read;
+                ulong n;
+                return KeyInput.fromCtrlC();
+            }
+        }
+        return KeyInput.fromCtrlC();
     }
 }
 
@@ -353,16 +386,28 @@ struct KeyInput
     int count;
     string input;
     byte[] bytes;
+    bool ctrlC;
     this(int count, string input)
     {
         this.count = count;
         this.input = input.dup;
+        this.ctrlC = false;
     }
 
     this(int count, byte[] bytes)
     {
         this.count = count;
         this.bytes = bytes;
+        this.ctrlC = false;
+    }
+    this(int count, bool ctrlC) {
+        this.count = count;
+        this.bytes = null;
+        this.ctrlC = ctrlC;
+    }
+
+    static auto fromCtrlC() {
+        return cast(immutable)KeyInput(COUNT++, true);
     }
 
     static auto fromText(string s)
