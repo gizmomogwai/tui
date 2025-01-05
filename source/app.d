@@ -18,7 +18,6 @@ class Text2 : Text
 struct State
 {
     bool finished;
-    int ctrlCSignalFD;
 }
 
 string longText() {
@@ -27,14 +26,8 @@ string longText() {
         .joiner("\n")
         .to!string;
 }
-State state = {finished: false, ctrlCSignalFD: 0, };
+State state = {finished: false, };
 
-extern (C) void signal(int sig, void function(int));
-extern (C) void ctrlC(int signal) {
-    import core.sys.posix.unistd : write;
-    ulong n = 1;
-    write(state.ctrlCSignalFD, &n, n.sizeof);
-}
 int main(string[] args)
 {
     if (args.length < 2)
@@ -43,7 +36,6 @@ int main(string[] args)
         return 1;
     }
     scope terminal = new Terminal;
-    state.ctrlCSignalFD = terminal.ctrlCSignalFD;
     auto ui = new Ui(terminal);
     if (args[1] == "demo")
     {
@@ -125,8 +117,6 @@ int main(string[] args)
         ui.push(root);
     }
 
-    
-    signal(2, &ctrlC);
     ui.resize;
     while (!state.finished)
     {
@@ -136,7 +126,9 @@ int main(string[] args)
         {
             break;
         }
-        ui.handleInput(cast()input);
+        if (!input.empty) {
+            ui.handleInput(cast()input);
+        }
     }
     return 0;
 }

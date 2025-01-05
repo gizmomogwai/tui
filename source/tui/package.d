@@ -74,7 +74,16 @@ string to(State state, Mode mode)
     return "\x1b[" ~ state ~ mode;
 }
 
+extern (C) void signal(int sig, void function(int));
+
 Terminal INSTANCE;
+extern (C) void ctrlC(int s)
+{
+    import core.sys.posix.unistd : write;
+    ulong n = 1;
+    write(INSTANCE.ctrlCSignalFD(), &n, n.sizeof);
+}
+
 class Terminal
 {
     termios originalState;
@@ -96,7 +105,9 @@ class Terminal
         wDirect(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
         import core.sys.posix.unistd : pipe;
         auto result = pipe(pipeDescriptors);
-        (result != -1).enforce("Cannot create pipe");
+        (result != -1).enforce("Cannot create pipe for signal handling");
+        INSTANCE = this;
+        signal(2, &ctrlC);
     }
 
     ~this()
@@ -161,7 +172,7 @@ class Terminal
     {
         import core.sys.posix.poll;
         pollfd[2] pfds;
-        pfds[0].fd = 1;
+        pfds[0].fd = 0; // stdin
         pfds[0].events = POLLIN;
         pfds[0].revents = 0;
 
@@ -169,23 +180,25 @@ class Terminal
         pfds[1].events = POLLIN;
         pfds[1].revents = 0;
 
+        // poll is either interrupted by a signal or by receiving
+        // something that was written to the pipe file descriptor
         auto result = poll(pfds.ptr, 2, -1);
 
         if (result > 0) {
             if (pfds[0].revents > 0) {
                 char[3] buffer;
-                auto count = core.sys.posix.unistd.read(1, &buffer, buffer.length);
+                auto count = core.sys.posix.unistd.read(pfds[0].fd, &buffer, buffer.length);
                 (count != -1).errnoEnforce("Cannot read next input");
                 return KeyInput.fromText(buffer[0 .. count].idup);
             }
 
             if (pfds[1].revents > 0) {
-                import core.sys.posix.unistd : read;
-                ulong n;
                 return KeyInput.fromCtrlC();
             }
+            throw new Exception("strange");
+        } else {
+            return KeyInput.fromInterrupt();
         }
-        return KeyInput.fromCtrlC();
     }
 }
 
@@ -387,11 +400,13 @@ struct KeyInput
     string input;
     byte[] bytes;
     bool ctrlC;
+    bool empty;
     this(int count, string input)
     {
         this.count = count;
         this.input = input.dup;
         this.ctrlC = false;
+        this.empty = false;
     }
 
     this(int count, byte[] bytes)
@@ -399,15 +414,22 @@ struct KeyInput
         this.count = count;
         this.bytes = bytes;
         this.ctrlC = false;
+        this.empty = false;
     }
-    this(int count, bool ctrlC) {
+    this(int count, bool ctrlC, bool empty) {
         this.count = count;
         this.bytes = null;
         this.ctrlC = ctrlC;
+        this.empty = empty;
     }
 
-    static auto fromCtrlC() {
-        return cast(immutable)KeyInput(COUNT++, true);
+    static auto fromCtrlC()
+    {
+        return cast(immutable)KeyInput(COUNT++, true, false);
+    }
+    static auto fromInterrupt()
+    {
+        return cast(immutable)KeyInput(COUNT++, false, true);
     }
 
     static auto fromText(string s)

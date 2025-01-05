@@ -1,17 +1,25 @@
 #+TODO: TODO IN-PROGRESS | DONE NOT
 * Simple tui lib for dlang
 ** Demos
-- 
 - [[https://asciinema.org/a/594802][Canvas]]
 
 ** Features
 - no ncurses: http://xn--rpa.cc/irl/term.html / https://web.archive.org/web/20220520031528/http://xn--rpa.cc/irl/term.html
-  - (easier to handle colors e.g.)
-  - no dependency
+        - (easier to handle colors e.g.)
+        - no dependency
 - KEY_RESIZE to react on terminal resizes
 - ansi colors are nice, but hard for clipping
 - signal handler for windowsize changes
+https://stackoverflow.com/questions/43555398/correctly-processing-ctrl-c-when-using-poll
 
+** TODO
+https://stackoverflow.com/questions/43555398/correctly-processing-ctrl-c-when-using-poll
+
+** Structure
+- mainthread should construct the ui
+- ctrl-c is handled by this library (unfortunately the signal handler
+  uses an singleton)
+- have a loop while not done that renders, gets input, handles input
 ** Todos
 *** DONE BUG for popups the underlying root does not "loos" focus atm
 *** DONE implement ScrollPane
