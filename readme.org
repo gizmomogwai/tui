@@ -20,6 +20,11 @@ https://stackoverflow.com/questions/43555398/correctly-processing-ctrl-c-when-us
 - ctrl-c is handled by this library (unfortunately the signal handler
   uses an singleton)
 - have a loop while not done that renders, gets input, handles input
+
+** References
+- https://nathancraddock.com/blog/macos-dev-tty-polling/
+- https://sunshowers.io/posts/beyond-ctrl-c-signals/
+
 ** Todos
 *** DONE BUG for popups the underlying root does not "loos" focus atm
 *** DONE implement ScrollPane

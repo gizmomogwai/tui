@@ -1,19 +1,17 @@
 module tui;
 
 import colored : forceStyle, Style;
-import core.stdc.ctype;
-import core.stdc.stdio;
-import core.sys.posix.sys.ioctl;
-import core.sys.posix.termios;
-import core.sys.posix.unistd;
+import core.sys.posix.signal : SIGINT;
+import core.sys.posix.sys.ioctl : ioctl, TIOCGWINSZ, winsize;
+import core.sys.posix.termios : ECHO, ICANON, tcgetattr, TCSAFLUSH, TCSANOW, tcsetattr, termios;
 import std.algorithm : countUntil, find, max, min;
-import std.array : appender;
+import std.array : appender, array;
 import std.conv : to;
-import std.exception : errnoEnforce, enforce;
+import std.exception : enforce, errnoEnforce;
 import std.math.algebraic : abs;
-import std.range : empty, front, popFront, cycle;
-import std.signals; // import std.signals : Signal does not work ...
-import std.string : join, split, format;
+import std.range : cycle, empty, front, popFront;
+import std.signals;
+import std.string : format, join, split;
 import std.typecons : Tuple;
 
 version (unittest)
@@ -23,7 +21,7 @@ version (unittest)
 
 alias Position = Tuple!(int, "x", int, "y");
 alias Dimension = Tuple!(int, "width", int, "height"); /// https://en.wikipedia.org/wiki/ANSI_escape_code
-
+enum SIGWINCH = 28;
 @safe auto next(Range)(Range r)
 {
     r.popFront;
@@ -74,40 +72,74 @@ string to(State state, Mode mode)
     return "\x1b[" ~ state ~ mode;
 }
 
-extern (C) void signal(int sig, void function(int));
+__gshared Terminal INSTANCE;
 
-Terminal INSTANCE;
+extern (C) void signal(int sig, void function(int));
 extern (C) void ctrlC(int s)
 {
     import core.sys.posix.unistd : write;
-    ulong n = 1;
-    write(INSTANCE.ctrlCSignalFD(), &n, n.sizeof);
+
+    auto result = INSTANCE.ctrlCSignalFD().write(&s, s.sizeof);
+
+}
+
+class SelectSet
+{
+    import core.stdc.errno : EINTR, errno;
+    import core.sys.posix.sys.select : FD_ISSET, FD_SET, fd_set, FD_ZERO, select;
+
+    fd_set fds;
+    int maxFD;
+    this()
+    {
+        FD_ZERO(&fds);
+        maxFD = 0;
+    }
+    void addFD(int fd)
+    {
+        FD_SET(fd, &fds);
+        maxFD = max(fd, maxFD);
+    }
+    int readyForRead() {
+        return select(maxFD + 1, &fds, null, null, null);
+    }
+    bool isSet(int fd) {
+        return FD_ISSET(fd, &fds);
+    }
 }
 
 class Terminal
 {
+    int stdinFD;
+    int stdoutFD;
     termios originalState;
     auto buffer = appender!(char[])();
-    int[2] pipeDescriptors;
-    int ctrlCSignalFD() {
-        return pipeDescriptors[1];
-    }
-    this()
+    int[2] selfSignalFDs;
+    int ctrlCSignalFD()
     {
-        (tcgetattr(1, &originalState) == 0).errnoEnforce("Cannot get termios");
+        return selfSignalFDs[1];
+    }
+
+    this(int stdinFD = 0, int stdoutFD = 1)
+    {
+        this.stdinFD = stdinFD;
+        this.stdoutFD = stdoutFD;
+        (tcgetattr(stdoutFD, &originalState) == 0).errnoEnforce("Cannot get termios");
 
         termios newState = originalState;
         newState.c_lflag &= ~ECHO & ~ICANON;
-        (tcsetattr(1, TCSAFLUSH, &newState) == 0).errnoEnforce("Cannot set new termios state");
+        (tcsetattr(stdoutFD, TCSAFLUSH, &newState) == 0).errnoEnforce(
+                "Cannot set new termios state");
 
         wDirect(State.ALTERNATE_BUFFER.to(Mode.HIGH), "Cannot switch to alternate buffer");
         wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
         wDirect(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
+
         import core.sys.posix.unistd : pipe;
-        auto result = pipe(pipeDescriptors);
+        auto result = pipe(this.selfSignalFDs);
         (result != -1).enforce("Cannot create pipe for signal handling");
         INSTANCE = this;
-        signal(2, &ctrlC);
+        2.signal(&ctrlC);
     }
 
     ~this()
@@ -116,10 +148,12 @@ class Terminal
         wDirect(State.ALTERNATE_BUFFER.to(Mode.LOW), "Cannot switch to normal buffer");
         wDirect(State.CURSOR.to(Mode.HIGH), "Cannot show cursor");
 
-        (tcsetattr(1, TCSANOW, &originalState) == 0).errnoEnforce("Cannot set original termios state");
+        (tcsetattr(stdoutFD, TCSANOW, &originalState) == 0).errnoEnforce(
+                "Cannot set original termios state");
         import core.sys.posix.unistd : close;
-        close(pipeDescriptors[0]);
-        close(pipeDescriptors[1]);
+
+        selfSignalFDs[0].close();
+        selfSignalFDs[1].close();
     }
 
     auto putString(string s)
@@ -130,14 +164,16 @@ class Terminal
 
     auto xy(int x, int y)
     {
-        w(Operation.CURSOR_POSITION.execute((y + 1).to!string, (x + 1)
-                .to!string));
+        w(Operation.CURSOR_POSITION.execute((y + 1).to!string, (x + 1).to!string));
         return this;
     }
 
     final void wDirect(string data, lazy string errorMessage)
     {
-        (core.sys.posix.unistd.write(2, data.ptr, data.length) == data.length).errnoEnforce(errorMessage);
+        // was 2 ???
+        import core.sys.posix.unistd : write;
+
+        (write(stdoutFD, data.ptr, data.length) == data.length).errnoEnforce(errorMessage);
     }
 
     final void w(string data)
@@ -155,50 +191,56 @@ class Terminal
     auto flip()
     {
         auto data = buffer.data;
-        (core.sys.posix.unistd.write(2, data.ptr, data.length) == data.length).errnoEnforce(
-                "Cannot blit data");
+        // was 2 ???
+        import core.sys.posix.unistd : write;
+
+        (write(stdoutFD, data.ptr, data.length) == data.length).errnoEnforce("Cannot blit data");
         return this;
     }
-
 
     Dimension dimension()
     {
         winsize ws;
-        (ioctl(1, TIOCGWINSZ, &ws) == 0).errnoEnforce("Cannot get winsize");
+        (ioctl(stdoutFD, TIOCGWINSZ, &ws) == 0).errnoEnforce("Cannot get winsize");
         return Dimension(ws.ws_col, ws.ws_row);
     }
 
     immutable(KeyInput) getInput()
     {
-        import core.sys.posix.poll;
-        pollfd[2] pfds;
-        pfds[0].fd = 0; // stdin
-        pfds[0].events = POLLIN;
-        pfds[0].revents = 0;
+        // osx needs to do select when working with /dev/tty https://nathancraddock.com/blog/macos-dev-tty-polling/
+        scope select = new SelectSet();
+        select.addFD(selfSignalFDs[0]);
+        select.addFD(stdinFD);
 
-        pfds[1].fd = pipeDescriptors[0];
-        pfds[1].events = POLLIN;
-        pfds[1].revents = 0;
-
-        // poll is either interrupted by a signal or by receiving
-        // something that was written to the pipe file descriptor
-        auto result = poll(pfds.ptr, 2, -1);
-
-        if (result > 0) {
-            if (pfds[0].revents > 0) {
-                char[3] buffer;
-                auto count = core.sys.posix.unistd.read(pfds[0].fd, &buffer, buffer.length);
-                (count != -1).errnoEnforce("Cannot read next input");
-                return KeyInput.fromText(buffer[0 .. count].idup);
-            }
-
-            if (pfds[1].revents > 0) {
-                return KeyInput.fromCtrlC();
-            }
-            throw new Exception("strange");
-        } else {
+        int result = select.readyForRead();
+        if (result == -1)
+        {
             return KeyInput.fromInterrupt();
         }
+        else if (result > 0)
+        {
+            if (select.isSet(stdinFD))
+            {
+                import core.sys.posix.unistd : read;
+
+                char[32] buffer;
+                auto count = read(stdinFD, &buffer, buffer.length);
+                (count != -1).errnoEnforce("Cannot read next input");
+
+                return KeyInput.fromText(buffer[0 .. count].idup);
+            }
+            else if (select.isSet(selfSignalFDs[0]))
+            {
+                import core.sys.posix.unistd : read;
+
+                int buffer;
+                auto count = selfSignalFDs[0].read(&buffer, buffer.sizeof);
+                (count != buffer.sizeof).errnoEnforce("Cannot read on self signal fds read end");
+
+                return KeyInput.fromCtrlC();
+            }
+        }
+        throw new Exception("Should not happen as we wait forever");
     }
 }
 
@@ -207,7 +249,7 @@ enum Key : string
     up = [27, 91, 65],
     down = [27, 91, 66],
     left = [27, 91, 67],
-    right = [27, 91, 68],/+
+    right = [27, 91, 68], /+
      codeYes = KEY_CODE_YES,
      min = KEY_MIN,
      codeBreak = KEY_BREAK,
@@ -366,6 +408,8 @@ enum Key : string
      max = KEY_MAX,
      +/
 
+
+
 }
 /+
  enum Attributes : chtype
@@ -416,7 +460,9 @@ struct KeyInput
         this.ctrlC = false;
         this.empty = false;
     }
-    this(int count, bool ctrlC, bool empty) {
+
+    this(int count, bool ctrlC, bool empty)
+    {
         this.count = count;
         this.bytes = null;
         this.ctrlC = ctrlC;
@@ -425,16 +471,17 @@ struct KeyInput
 
     static auto fromCtrlC()
     {
-        return cast(immutable)KeyInput(COUNT++, true, false);
+        return cast(immutable) KeyInput(COUNT++, true, false);
     }
+
     static auto fromInterrupt()
     {
-        return cast(immutable)KeyInput(COUNT++, false, true);
+        return cast(immutable) KeyInput(COUNT++, false, true);
     }
 
     static auto fromText(string s)
     {
-        return cast(immutable)KeyInput(COUNT++, s);
+        return cast(immutable) KeyInput(COUNT++, s);
     }
 
     static auto fromBytes(byte[] bytes)
@@ -535,9 +582,12 @@ abstract class Component
     {
         return true;
     }
-    bool focusable() {
+
+    bool focusable()
+    {
         return false;
     }
+
     bool handleInput(KeyInput input)
     {
         switch (input.input)
@@ -589,17 +639,16 @@ abstract class Component
         {
             auto components = findAllFocusableComponents();
             if (components.empty)
-                {
-                    return;
-                    }
-            if (currentFocusedComponent is null) {
+            {
+                return;
+            }
+            if (currentFocusedComponent is null)
+            {
                 components.front.requestFocus;
-            } else {
-                components
-                    .cycle
-                    .find(currentFocusedComponent)
-                    .next
-                    .requestFocus;
+            }
+            else
+            {
+                components.cycle.find(currentFocusedComponent).next.requestFocus;
             }
         }
         else
@@ -607,11 +656,15 @@ abstract class Component
             parent.focusNext();
         }
     }
-    private Component[] findAllFocusableComponents(Component[] result=null) {
-        if (focusable()) {
+
+    private Component[] findAllFocusableComponents(Component[] result = null)
+    {
+        if (focusable())
+        {
             result ~= this;
         }
-        foreach (child; children) {
+        foreach (child; children)
+        {
             result = child.findAllFocusableComponents(result);
         }
         return result;
@@ -742,17 +795,24 @@ class Text : Component
     }
 }
 
-class MultilineText : Component {
+class MultilineText : Component
+{
     string[] lines;
-    this(string content) {
+    this(string content)
+    {
         lines = content.split("\n");
     }
-    override void render(Context context) {
-        foreach (idx, line; lines) {
-            context.putString(0, cast(int)idx, line);
+
+    override void render(Context context)
+    {
+        foreach (idx, line; lines)
+        {
+            context.putString(0, cast(int) idx, line);
         }
     }
-    override bool handlesInput() {
+
+    override bool handlesInput()
+    {
         return false;
     }
 }
@@ -762,17 +822,19 @@ class Canvas : Component
     class Graphics
     {
         import std.uni : unicode;
-        import std.array : array;
+
         static braille = unicode.Braille.byCodepoint.array;
         int[] pixels;
         this()
         {
             pixels = new int[width * height];
         }
+
         int getWidth()
         {
             return width * 2;
         }
+
         int getHeight()
         {
             return height * 4;
@@ -781,7 +843,7 @@ class Canvas : Component
         void line(const(Position) from, const(Position) to)
         {
             const int dx = (to.x - from.x).abs;
-            const int stepX= from.x < to.x ? 1 : -1;
+            const int stepX = from.x < to.x ? 1 : -1;
 
             const int dy = -(to.y - from.y).abs;
             const int stepY = from.y < to.y ? 1 : -1;
@@ -808,7 +870,7 @@ class Canvas : Component
                 }
                 if (e2 <= dx)
                 {
-                    if (y ==to.y)
+                    if (y == to.y)
                     {
                         break;
                     }
@@ -829,22 +891,23 @@ class Canvas : Component
             // 1 4
             // 2 5
             // 6 7
-            int xIdx = p.x/2;
-            int yIdx = p.y/4;
+            int xIdx = p.x / 2;
+            int yIdx = p.y / 4;
 
-            int brailleX = p.x%2;
-            int brailleY = p.y%4;
+            int brailleX = p.x % 2;
+            int brailleY = p.y % 4;
             static brailleBits = [0, 1, 2, 6, 3, 4, 5, 7];
-            int idx = xIdx + yIdx*width;
-            pixels[idx] |= 1 << brailleBits[brailleY + brailleX*4];
+            int idx = xIdx + yIdx * width;
+            pixels[idx] |= 1 << brailleBits[brailleY + brailleX * 4];
         }
+
         void render(Context context)
         {
-            for (int j=0; j<height; ++j)
+            for (int j = 0; j < height; ++j)
             {
-                for (int i=0; i<width; ++i)
+                for (int i = 0; i < width; ++i)
                 {
-                    const idx = i + j*width;
+                    const idx = i + j * width;
                     const p = pixels[idx];
                     if (p != 0)
                     {
@@ -854,18 +917,21 @@ class Canvas : Component
             }
         }
     }
+
     alias Painter = void delegate(Canvas.Graphics, Context);
     Painter painter;
     this(Painter painter)
     {
         this.painter = painter;
     }
+
     override void render(Context context)
     {
         scope g = new Graphics();
         painter(g, context);
         g.render(context);
     }
+
     override bool handlesInput()
     {
         return false;
@@ -906,9 +972,12 @@ class Button : Component
             return false;
         }
     }
-    override bool focusable() {
+
+    override bool focusable()
+    {
         return true;
     }
+
     override string toString()
     {
         return "Button";
@@ -1046,7 +1115,7 @@ int clipTo(int v, size_t maximum)
 class List(T, alias stringTransform) : Component
 {
     T[] model;
-    T[] delegate() getData;
+    T[]delegate() getData;
 
     ScrollInfo scrollInfo;
     mixin Signal!(T) selectionChanged;
@@ -1081,13 +1150,14 @@ class List(T, alias stringTransform) : Component
         }
     }
 
-    this(T[] model, bool vMirror=false)
+    this(T[] model, bool vMirror = false)
     {
         this.model = model;
         this.scrollInfo = ScrollInfo(0, 0);
         this.vMirror = vMirror;
     }
-    this(T[] delegate() getData, bool vMirror = false)
+
+    this(T[]delegate() getData, bool vMirror = false)
     {
         this.getData = getData;
         this.scrollInfo = ScrollInfo(0, 0);
@@ -1112,10 +1182,9 @@ class List(T, alias stringTransform) : Component
             if (index >= model.length)
                 return;
             const selected = (index == scrollInfo.selection) && (currentFocusedComponent == this);
-            auto text = "%s %s"
-                .format(selected ? ">" : " ", stringTransform(model[index]));
+            auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index]));
             text = selected ? text.forceStyle(Style.reverse) : text;
-            context.putString(0, vMirror ? height-1 - i : i, text);
+            context.putString(0, vMirror ? height - 1 - i : i, text);
         }
     }
 
@@ -1123,10 +1192,12 @@ class List(T, alias stringTransform) : Component
     {
         vMirror ? _down : _up;
     }
+
     void down()
     {
         vMirror ? _up : _down;
     }
+
     void _up()
     {
         if (model.empty)
@@ -1176,11 +1247,13 @@ class List(T, alias stringTransform) : Component
         }
     }
 
-    override bool focusable() {
+    override bool focusable()
+    {
         return true;
     }
 
-    override string toString() {
+    override string toString()
+    {
         return "List";
     }
 }
@@ -1249,9 +1322,12 @@ class ScrollPane : Component
             return super.handleInput(input);
         }
     }
-    override bool focusable() {
+
+    override bool focusable()
+    {
         return true;
     }
+
     override void render(Context c)
     {
         auto child = children.front;
@@ -1311,10 +1387,13 @@ class Context
         this.height = height;
         this.viewport = viewport;
     }
+
     override string toString()
     {
-        return "Context(left=%s, top=%s, width=%s, height=%s, viewport=%s)".format(left, top, width, height, viewport);
+        return "Context(left=%s, top=%s, width=%s, height=%s, viewport=%s)".format(left,
+                top, width, height, viewport);
     }
+
     auto forChild(Component c)
     {
         return new Context(terminal, this.left + c.left, this.top + c.top, c.width, c.height);
@@ -1322,19 +1401,15 @@ class Context
 
     auto forChild(Component c, Viewport viewport)
     {
-        return new Context(
-            terminal,
-            this.left + c.left,
-            this.top + c.top,
-            c.width,
-            c.height,
-            viewport);
+        return new Context(terminal, this.left + c.left, this.top + c.top,
+                c.width, c.height, viewport);
     }
 
     auto putString(int x, int y, string s)
     {
         int scrolledY = y - viewport.y;
-        if (scrolledY < 0) {
+        if (scrolledY < 0)
+        {
             return this;
         }
         if (scrolledY >= viewport.height)
@@ -1360,7 +1435,7 @@ class Ui : UiInterface
     {
         this.terminal = terminal;
         theUi = this;
-        signal(28, &windowSizeChangedSignalHandler);
+        signal(SIGWINCH, &windowSizeChangedSignalHandler);
     }
 
     auto push(Component root)
@@ -1395,12 +1470,8 @@ class Ui : UiInterface
             terminal.clearBuffer();
             foreach (root; roots)
             {
-                scope context = new Context(
-                    terminal,
-                    root.left,
-                    root.top,
-                    root.width,
-                    root.height);
+                scope context = new Context(terminal, root.left, root.top,
+                        root.width, root.height);
                 root.render(context);
             }
             terminal.flip;
@@ -1431,9 +1502,10 @@ class Ui : UiInterface
             root.resize(0, 0, dimension.width, dimension.height);
         }
     }
+
     void handleInput(KeyInput input)
     {
-        roots[$-1].handleInput(input);
+        roots[$ - 1].handleInput(input);
     }
 }
 
