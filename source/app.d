@@ -1,5 +1,5 @@
 import tui : Ui, Text, KeyInput, List, VSplit, ScrollPane, HSplit, Terminal,
-    Button, MultilineText, Canvas, Context, Position;
+    Button, MultilineText, Canvas, Context, Position, Component;
 import std.algorithm : joiner, map, min;
 import std.array : array, join;
 import std.conv : to;
@@ -155,9 +155,28 @@ void canvas(Ui ui)
     ui.push(root);
 }
 
-void stdinUi(Ui ui)
+class Model {
+    public string[] lines;
+    void add(string line) {
+        lines ~= line;
+    }
+}
+void readStdin(shared(Terminal) terminal, shared(Model) lines) {
+    foreach (line; stdin.byLineCopy) {
+        (cast()terminal).runInTerminalThread(() {
+                (line) { return () => (cast()lines).add(line); }(line)();
+            });
+    }
+}
+
+void stdinUi(shared(Terminal) terminal, Ui ui)
 {
-    auto root = new List!(string, i => i)(stdin.byLineCopy.array);
+    import std.concurrency : spawn;
+
+    auto lines = new Model();
+    auto root = new List!(string, i => i)(() { return (cast()lines).lines;});
+    spawn(&readStdin, terminal, cast(shared)lines);
+
     root.setInputHandler((input) {
         switch (input.input)
         {
@@ -192,7 +211,7 @@ int main(string[] args)
             canvas(ui);
             break;
         case "stdin":
-            stdinUi(ui);
+            stdinUi(cast(shared(Terminal))terminal, ui);
             break;
         default:
             break;

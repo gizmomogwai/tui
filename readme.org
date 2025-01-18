@@ -24,7 +24,8 @@ https://stackoverflow.com/questions/43555398/correctly-processing-ctrl-c-when-us
 ** References
 - https://nathancraddock.com/blog/macos-dev-tty-polling/
 - https://sunshowers.io/posts/beyond-ctrl-c-signals/
-
+- https://code.saghul.net/2016/05/libuv-internals-the-osx-select2-trick/ -
+  poll is broken in osx for /dev/tty
 ** Todos
 *** DONE BUG for popups the underlying root does not "loos" focus atm
 *** DONE implement ScrollPane

@@ -78,9 +78,7 @@ extern (C) void signal(int sig, void function(int));
 extern (C) void ctrlC(int s)
 {
     import core.sys.posix.unistd : write;
-
-    auto result = INSTANCE.ctrlCSignalFD().write(&s, s.sizeof);
-
+    INSTANCE.ctrlCSignalFD().write(&s, s.sizeof);
 }
 
 class SelectSet
@@ -114,16 +112,32 @@ class Terminal
     int stdoutFD;
     termios originalState;
     auto buffer = appender!(char[])();
+    /// used to handle signals
     int[2] selfSignalFDs;
     int ctrlCSignalFD()
     {
         return selfSignalFDs[1];
     }
 
+    /// used to run delegates in the input handling thread
+    int[2] terminalThreadFDs;
+    void delegate()[] terminalThreadDelegates;
+
     this(int stdinFD = 0, int stdoutFD = 1)
     {
+        import core.sys.posix.unistd : pipe;
+        auto result = pipe(this.selfSignalFDs);
+        (result != -1).errnoEnforce("Cannot create pipe for signal handling");
+
+        result = pipe(this.terminalThreadFDs);
+        (result != -1).errnoEnforce("Cannot create pipe for run in terminal input thread");
+        import std.stdio:writeln;writeln("terminalthreadfds: ", terminalThreadFDs);
+        import std.stdio:writeln;writeln("selfSignalFDs: ", selfSignalFDs);
+
         this.stdinFD = stdinFD;
         this.stdoutFD = stdoutFD;
+        writeln(format("in out [%s, %s]", stdinFD, stdoutFD));
+
         (tcgetattr(stdoutFD, &originalState) == 0).errnoEnforce("Cannot get termios");
 
         termios newState = originalState;
@@ -135,9 +149,6 @@ class Terminal
         wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
         wDirect(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
 
-        import core.sys.posix.unistd : pipe;
-        auto result = pipe(this.selfSignalFDs);
-        (result != -1).enforce("Cannot create pipe for signal handling");
         INSTANCE = this;
         2.signal(&ctrlC);
     }
@@ -154,6 +165,9 @@ class Terminal
 
         selfSignalFDs[0].close();
         selfSignalFDs[1].close();
+
+        terminalThreadFDs[0].close();
+        terminalThreadFDs[1].close();
     }
 
     auto putString(string s)
@@ -170,10 +184,8 @@ class Terminal
 
     final void wDirect(string data, lazy string errorMessage)
     {
-        // was 2 ???
         import core.sys.posix.unistd : write;
-
-        (write(stdoutFD, data.ptr, data.length) == data.length).errnoEnforce(errorMessage);
+        (2.write(data.ptr, data.length) == data.length).errnoEnforce(errorMessage);
     }
 
     final void w(string data)
@@ -193,8 +205,7 @@ class Terminal
         auto data = buffer.data;
         // was 2 ???
         import core.sys.posix.unistd : write;
-
-        (write(stdoutFD, data.ptr, data.length) == data.length).errnoEnforce("Cannot blit data");
+        (2.write(data.ptr, data.length) == data.length).errnoEnforce("Cannot blit data");
         return this;
     }
 
@@ -205,11 +216,21 @@ class Terminal
         return Dimension(ws.ws_col, ws.ws_row);
     }
 
+    void runInTerminalThread(void delegate() d)
+    {
+        synchronized (this) {
+            terminalThreadDelegates ~= d;
+        }
+        ubyte h = 0;
+        import core.sys.posix.unistd : write;
+        (terminalThreadFDs[1].write(&h, h.sizeof) == h.sizeof).errnoEnforce("Cannot write ubyte to terminalThreadFD");
+    }
     immutable(KeyInput) getInput()
     {
         // osx needs to do select when working with /dev/tty https://nathancraddock.com/blog/macos-dev-tty-polling/
         scope select = new SelectSet();
         select.addFD(selfSignalFDs[0]);
+        select.addFD(terminalThreadFDs[0]);
         select.addFD(stdinFD);
 
         int result = select.readyForRead();
@@ -219,28 +240,44 @@ class Terminal
         }
         else if (result > 0)
         {
-            if (select.isSet(stdinFD))
-            {
-                import core.sys.posix.unistd : read;
-
-                char[32] buffer;
-                auto count = read(stdinFD, &buffer, buffer.length);
-                (count != -1).errnoEnforce("Cannot read next input");
-
-                return KeyInput.fromText(buffer[0 .. count].idup);
-            }
-            else if (select.isSet(selfSignalFDs[0]))
+            if (select.isSet(selfSignalFDs[0]))
             {
                 import core.sys.posix.unistd : read;
 
                 int buffer;
                 auto count = selfSignalFDs[0].read(&buffer, buffer.sizeof);
-                (count != buffer.sizeof).errnoEnforce("Cannot read on self signal fds read end");
+                (count == buffer.sizeof).errnoEnforce("Cannot read on self signal fds read end");
 
                 return KeyInput.fromCtrlC();
             }
+            else if (select.isSet(terminalThreadFDs[0]))
+            {
+                ubyte buffer;
+                import core.sys.posix.unistd : read;
+                auto count = read(terminalThreadFDs[0], &buffer, buffer.sizeof);
+                (count == buffer.sizeof).errnoEnforce(format("Cannot read next delegate on fd %s", terminalThreadFDs[0]));
+
+                if (terminalThreadDelegates.length > 0) {
+                    auto h = terminalThreadDelegates[0];
+                    terminalThreadDelegates = terminalThreadDelegates[1..$];
+                    h();
+                }
+                // do not return but process key inputs
+            }
+
+            if (select.isSet(stdinFD))
+            {
+                import core.sys.posix.unistd : read;
+
+                char[32] buffer;
+                auto count = stdinFD.read(&buffer, buffer.length);
+                (count != -1).errnoEnforce("Cannot read next input");
+
+                return KeyInput.fromText(buffer[0 .. count].idup);
+            }
+
         }
-        throw new Exception("Should not happen as we wait forever");
+        return KeyInput.fromEmpty();
     }
 }
 
@@ -250,7 +287,8 @@ enum Key : string
     down = [27, 91, 66],
     left = [27, 91, 67],
     right = [27, 91, 68], /+
-     codeYes = KEY_CODE_YES,
+
+codeYes = KEY_CODE_YES,
      min = KEY_MIN,
      codeBreak = KEY_BREAK,
      left = KEY_LEFT,
@@ -445,25 +483,25 @@ struct KeyInput
     byte[] bytes;
     bool ctrlC;
     bool empty;
-    this(int count, string input)
+    this(string input)
     {
-        this.count = count;
+        this.count = COUNT++;
         this.input = input.dup;
         this.ctrlC = false;
         this.empty = false;
     }
 
-    this(int count, byte[] bytes)
+    this(byte[] bytes)
     {
-        this.count = count;
+        this.count = COUNT++;
         this.bytes = bytes;
         this.ctrlC = false;
         this.empty = false;
     }
 
-    this(int count, bool ctrlC, bool empty)
+    this(bool ctrlC, bool empty)
     {
-        this.count = count;
+        this.count = COUNT++;
         this.bytes = null;
         this.ctrlC = ctrlC;
         this.empty = empty;
@@ -471,22 +509,25 @@ struct KeyInput
 
     static auto fromCtrlC()
     {
-        return cast(immutable) KeyInput(COUNT++, true, false);
+        return cast(immutable) KeyInput(true, false);
     }
 
     static auto fromInterrupt()
     {
-        return cast(immutable) KeyInput(COUNT++, false, true);
+        return cast(immutable) KeyInput(false, true);
     }
 
     static auto fromText(string s)
     {
-        return cast(immutable) KeyInput(COUNT++, s);
+        return cast(immutable) KeyInput(s);
     }
 
     static auto fromBytes(byte[] bytes)
     {
-        return KeyInput(COUNT++, bytes);
+        return KeyInput(bytes);
+    }
+    static auto fromEmpty() {
+        return cast(immutable)KeyInput(false, true);
     }
 }
 
