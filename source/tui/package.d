@@ -78,6 +78,7 @@ extern (C) void signal(int sig, void function(int));
 extern (C) void ctrlC(int s)
 {
     import core.sys.posix.unistd : write;
+
     INSTANCE.ctrlCSignalFD().write(&s, s.sizeof);
 }
 
@@ -93,15 +94,20 @@ class SelectSet
         FD_ZERO(&fds);
         maxFD = 0;
     }
+
     void addFD(int fd)
     {
         FD_SET(fd, &fds);
         maxFD = max(fd, maxFD);
     }
-    int readyForRead() {
+
+    int readyForRead()
+    {
         return select(maxFD + 1, &fds, null, null, null);
     }
-    bool isSet(int fd) {
+
+    bool isSet(int fd)
+    {
         return FD_ISSET(fd, &fds);
     }
 }
@@ -126,13 +132,18 @@ class Terminal
     this(int stdinFD = 0, int stdoutFD = 1)
     {
         import core.sys.posix.unistd : pipe;
+
         auto result = pipe(this.selfSignalFDs);
         (result != -1).errnoEnforce("Cannot create pipe for signal handling");
 
         result = pipe(this.terminalThreadFDs);
         (result != -1).errnoEnforce("Cannot create pipe for run in terminal input thread");
-        import std.stdio:writeln;writeln("terminalthreadfds: ", terminalThreadFDs);
-        import std.stdio:writeln;writeln("selfSignalFDs: ", selfSignalFDs);
+        import std.stdio : writeln;
+
+        writeln("terminalthreadfds: ", terminalThreadFDs);
+        import std.stdio : writeln;
+
+        writeln("selfSignalFDs: ", selfSignalFDs);
 
         this.stdinFD = stdinFD;
         this.stdoutFD = stdoutFD;
@@ -185,6 +196,7 @@ class Terminal
     final void wDirect(string data, lazy string errorMessage)
     {
         import core.sys.posix.unistd : write;
+
         (2.write(data.ptr, data.length) == data.length).errnoEnforce(errorMessage);
     }
 
@@ -205,6 +217,7 @@ class Terminal
         auto data = buffer.data;
         // was 2 ???
         import core.sys.posix.unistd : write;
+
         (2.write(data.ptr, data.length) == data.length).errnoEnforce("Cannot blit data");
         return this;
     }
@@ -218,13 +231,17 @@ class Terminal
 
     void runInTerminalThread(void delegate() d)
     {
-        synchronized (this) {
+        synchronized (this)
+        {
             terminalThreadDelegates ~= d;
         }
         ubyte h = 0;
         import core.sys.posix.unistd : write;
-        (terminalThreadFDs[1].write(&h, h.sizeof) == h.sizeof).errnoEnforce("Cannot write ubyte to terminalThreadFD");
+
+        (terminalThreadFDs[1].write(&h, h.sizeof) == h.sizeof).errnoEnforce(
+                "Cannot write ubyte to terminalThreadFD");
     }
+
     immutable(KeyInput) getInput()
     {
         // osx needs to do select when working with /dev/tty https://nathancraddock.com/blog/macos-dev-tty-polling/
@@ -254,12 +271,15 @@ class Terminal
             {
                 ubyte buffer;
                 import core.sys.posix.unistd : read;
-                auto count = read(terminalThreadFDs[0], &buffer, buffer.sizeof);
-                (count == buffer.sizeof).errnoEnforce(format("Cannot read next delegate on fd %s", terminalThreadFDs[0]));
 
-                if (terminalThreadDelegates.length > 0) {
+                auto count = read(terminalThreadFDs[0], &buffer, buffer.sizeof);
+                (count == buffer.sizeof).errnoEnforce(format("Cannot read next delegate on fd %s",
+                        terminalThreadFDs[0]));
+
+                if (terminalThreadDelegates.length > 0)
+                {
                     auto h = terminalThreadDelegates[0];
-                    terminalThreadDelegates = terminalThreadDelegates[1..$];
+                    terminalThreadDelegates = terminalThreadDelegates[1 .. $];
                     h();
                 }
                 // do not return but process key inputs
@@ -526,8 +546,10 @@ struct KeyInput
     {
         return KeyInput(bytes);
     }
-    static auto fromEmpty() {
-        return cast(immutable)KeyInput(false, true);
+
+    static auto fromEmpty()
+    {
+        return cast(immutable) KeyInput(false, true);
     }
 }
 
