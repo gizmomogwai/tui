@@ -25,7 +25,7 @@ configuration "tui-demo" {
 configuration "unittest" {
     targetType "executable"
     targetPath "out/test"
-    dependency "unit-threaded" version="~>2.1.2"
+    dependency "unit-threaded" version="~>2.2.3"
     mainSourceFile "source/testsuite.d"
     excludedSourceFiles "src/main.d"
     postRunCommands "$DUB run lst2errormessages || true"

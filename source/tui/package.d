@@ -138,16 +138,9 @@ class Terminal
 
         result = pipe(this.terminalThreadFDs);
         (result != -1).errnoEnforce("Cannot create pipe for run in terminal input thread");
-        import std.stdio : writeln;
-
-        writeln("terminalthreadfds: ", terminalThreadFDs);
-        import std.stdio : writeln;
-
-        writeln("selfSignalFDs: ", selfSignalFDs);
 
         this.stdinFD = stdinFD;
         this.stdoutFD = stdoutFD;
-        writeln(format("in out [%s, %s]", stdinFD, stdoutFD));
 
         (tcgetattr(stdoutFD, &originalState) == 0).errnoEnforce("Cannot get termios");
 
@@ -278,8 +271,11 @@ class Terminal
 
                 if (terminalThreadDelegates.length > 0)
                 {
-                    auto h = terminalThreadDelegates[0];
-                    terminalThreadDelegates = terminalThreadDelegates[1 .. $];
+                    void delegate() h;
+                    synchronized (this) {
+                        h = terminalThreadDelegates[0];
+                        terminalThreadDelegates = terminalThreadDelegates[1 .. $];
+                    }
                     h();
                 }
                 // do not return but process key inputs
