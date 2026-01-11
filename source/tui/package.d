@@ -835,6 +835,43 @@ class Filled : Component
     }
 }
 
+class Border : Component
+{
+    Component child;
+    string title;
+    this(string title, Component child)
+    {
+        this.title = title;
+        this.child = child;
+    }
+
+    override void render(Context context)
+    {
+        enum TL = "╭";
+        enum TR = "╮";
+        enum BL = "╰";
+        enum BR = "╯";
+        enum H = "─";
+        enum V = "│";
+        context.line(Position(0, 0), Position(width, 0), H);
+        context.line(Position(0, height - 1), Position(width, height - 1), H);
+        context.line(Position(0, 0), Position(0, height - 1), V);
+        context.line(Position(width - 1, 0), Position(width - 1, height - 1), V);
+        context.putString(0, 0, TL);
+        context.putString(width - 1, 0, TR);
+        context.putString(0, height - 1, BL);
+        context.putString(width - 1, height - 1, BR);
+        context.putString(3, 0, " " ~ title ~ " ");
+        child.render(context.forChild(child));
+    }
+
+    override void resize(int left, int top, int width, int height)
+    {
+        super.resize(left, top, width, height);
+        this.child.resize(1, 1, width - 2, height - 2);
+    }
+}
+
 class Text : Component
 {
     string content;
@@ -1464,6 +1501,7 @@ class Context
                 c.width, c.height, viewport);
     }
 
+    /// low level output (taking left/top, viewport and scroll into account)
     auto putString(int x, int y, string s)
     {
         int scrolledY = y - viewport.y;
@@ -1483,6 +1521,47 @@ class Context
                 .takeIgnoreAnsiEscapes(viewport.width));
         // dfmt on
         return this;
+    }
+
+    // see https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm#All_cases
+    void line(const(Position) from, const(Position) to, const(string) what)
+    {
+        const int dx = (to.x - from.x).abs;
+        const int stepX = from.x < to.x ? 1 : -1;
+
+        const int dy = -(to.y - from.y).abs;
+        const int stepY = from.y < to.y ? 1 : -1;
+
+        int error = dx + dy;
+        int x = from.x;
+        int y = from.y;
+        while (true)
+        {
+            putString(x, y, what);
+            if (x == to.x && y == to.y)
+            {
+                break;
+            }
+            const e2 = 2 * error;
+            if (e2 >= dy)
+            {
+                if (x == to.x)
+                {
+                    break;
+                }
+                error += dy;
+                x += stepX;
+            }
+            if (e2 <= dx)
+            {
+                if (y == to.y)
+                {
+                    break;
+                }
+                error += dx;
+                y += stepY;
+            }
+        }
     }
 }
 
