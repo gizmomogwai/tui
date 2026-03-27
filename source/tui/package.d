@@ -1278,7 +1278,10 @@ class List(T, alias stringTransform) : Component
             if (index >= model.length)
                 return;
             const selected = (index == scrollInfo.selection) && (currentFocusedComponent == this);
-            auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index]));
+            static if (__traits(compiles, stringTransform(T.init, cast(size_t) 0)))
+                auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index], width - 2));
+            else
+                auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index]));
             text = selected ? text.forceStyle(Style.reverse) : text;
             context.putString(0, vMirror ? height - 1 - i : i, text);
         }
