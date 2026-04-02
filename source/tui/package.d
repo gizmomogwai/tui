@@ -1,6 +1,5 @@
 module tui;
 
-import colored : forceStyle, Style;
 import core.sys.posix.signal : SIGINT;
 import core.sys.posix.sys.ioctl : ioctl, TIOCGWINSZ, winsize;
 import core.sys.posix.termios : ECHO, ICANON, tcgetattr, TCSAFLUSH, TCSANOW, tcsetattr, termios;
@@ -9,10 +8,12 @@ import std.array : appender, array;
 import std.conv : to;
 import std.exception : enforce, errnoEnforce;
 import std.math.algebraic : abs;
-import std.range : cycle, empty, front, popFront;
-import std.signals;
-import std.string : format, join, split;
+import std.range : cycle, empty, front, popFront, split;
+import std.string : format, join;
 import std.typecons : Tuple;
+import tui.kittykeyboardprotocol : Tokenizer;
+public import tui.kittykeyboardprotocol : KeyInput, KITTY_KEYBOARD_DISABLE,
+    KITTY_KEYBOARD_ENABLE, Key, Modifier, EventType;
 
 version (unittest)
 {
@@ -152,6 +153,7 @@ class Terminal
         wDirect(State.ALTERNATE_BUFFER.to(Mode.HIGH), "Cannot switch to alternate buffer");
         wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear terminal");
         wDirect(State.CURSOR.to(Mode.LOW), "Cannot hide cursor");
+        wDirect(KITTY_KEYBOARD_ENABLE, "Cannot enable kitty keyboard protocol");
 
         INSTANCE = this;
         2.signal(&ctrlC);
@@ -159,6 +161,7 @@ class Terminal
 
     ~this()
     {
+        wDirect(KITTY_KEYBOARD_DISABLE, "Cannot disable kitty keyboard protocol");
         wDirect(Operation.CLEAR_TERMINAL.execute, "Cannot clear alternate buffer");
         wDirect(State.ALTERNATE_BUFFER.to(Mode.LOW), "Cannot switch to normal buffer");
         wDirect(State.CURSOR.to(Mode.HIGH), "Cannot show cursor");
@@ -237,347 +240,69 @@ class Terminal
 
     immutable(KeyInput) getInput()
     {
-        // osx needs to do select when working with /dev/tty https://nathancraddock.com/blog/macos-dev-tty-polling/
-        scope select = new SelectSet();
-        select.addFD(selfSignalFDs[0]);
-        select.addFD(terminalThreadFDs[0]);
-        select.addFD(stdinFD);
+        import core.sys.posix.unistd : read;
 
-        int result = select.readyForRead();
-        if (result == -1)
+        Tokenizer tokenizer = new Tokenizer();
+        while (true)
         {
-            return KeyInput.fromInterrupt();
-        }
-        else if (result > 0)
-        {
-            if (select.isSet(selfSignalFDs[0]))
+            // osx needs to do select when working with /dev/tty https://nathancraddock.com/blog/macos-dev-tty-polling/
+            scope sel = new SelectSet();
+            sel.addFD(selfSignalFDs[0]);
+            sel.addFD(terminalThreadFDs[0]);
+            sel.addFD(stdinFD);
+
+            int result = sel.readyForRead();
+            if (result == -1)
+                return KeyInput.fromInterrupt();
+
+            if (sel.isSet(selfSignalFDs[0]))
             {
-                import core.sys.posix.unistd : read;
-
-                int buffer;
-                auto count = selfSignalFDs[0].read(&buffer, buffer.sizeof);
-                (count == buffer.sizeof).errnoEnforce("Cannot read on self signal fds read end");
-
+                int buf;
+                auto count = selfSignalFDs[0].read(&buf, buf.sizeof);
+                (count == buf.sizeof).errnoEnforce("Cannot read on self signal fds read end");
                 return KeyInput.fromCtrlC();
             }
-            else if (select.isSet(terminalThreadFDs[0]))
+
+            if (sel.isSet(terminalThreadFDs[0]))
             {
-                ubyte buffer;
-                import core.sys.posix.unistd : read;
-
-                auto count = read(terminalThreadFDs[0], &buffer, buffer.sizeof);
-                (count == buffer.sizeof).errnoEnforce(format("Cannot read next delegate on fd %s",
+                ubyte buf;
+                auto count = read(terminalThreadFDs[0], &buf, buf.sizeof);
+                (count == buf.sizeof).errnoEnforce(format("Cannot read next delegate on fd %s",
                         terminalThreadFDs[0]));
-
                 if (terminalThreadDelegates.length > 0)
                 {
                     void delegate() h;
-                    synchronized (this) {
+                    synchronized (this)
+                    {
                         h = terminalThreadDelegates[0];
                         terminalThreadDelegates = terminalThreadDelegates[1 .. $];
                     }
                     h();
                 }
-                // do not return but process key inputs
+                // delegate ran — loop back to check for input
+                continue;
             }
 
-            if (select.isSet(stdinFD))
+            if (sel.isSet(stdinFD))
             {
-                import core.sys.posix.unistd : read;
-
-                char[32] buffer;
-                auto count = stdinFD.read(&buffer, buffer.length);
-                (count != -1).errnoEnforce("Cannot read next input");
-
-                return KeyInput.fromText(buffer[0 .. count].idup);
+                byte b;
+                auto count = stdinFD.read(&b, 1);
+                (count != -1).errnoEnforce("Cannot read next input byte");
+                if (count == 0)
+                {
+                    continue;
+                }
+                auto keyInput = tokenizer.feed(b);
+                if (keyInput)
+                {
+                    return keyInput;
+                }
             }
-
         }
-        return KeyInput.fromEmpty();
     }
-}
-
-enum Key : string
-{
-    up = [27, 91, 65],
-    down = [27, 91, 66],
-    left = [27, 91, 67],
-    right = [27, 91, 68], /+
-
-codeYes = KEY_CODE_YES,
-     min = KEY_MIN,
-     codeBreak = KEY_BREAK,
-     left = KEY_LEFT,
-     right = KEY_RIGHT,
-     home = KEY_HOME,
-     backspace = KEY_BACKSPACE,
-     f0 = KEY_F0,
-     f1 = KEY_F(1),
-     f2 = KEY_F(2),
-     f3 = KEY_F(3),
-     f4 = KEY_F(4),
-     f5 = KEY_F(5),
-     f6 = KEY_F(6),
-     f7 = KEY_F(7),
-     f8 = KEY_F(8),
-     f9 = KEY_F(9),
-     f10 = KEY_F(10),
-     f11 = KEY_F(11),
-     f12 = KEY_F(12),
-     f13 = KEY_F(13),
-     f14 = KEY_F(14),
-     f15 = KEY_F(15),
-     f16 = KEY_F(16),
-     f17 = KEY_F(17),
-     f18 = KEY_F(18),
-     f19s = KEY_F(19),
-     f20 = KEY_F(20),
-     f21 = KEY_F(21),
-     f22 = KEY_F(22),
-     f23 = KEY_F(23),
-     f24 = KEY_F(24),
-     f25 = KEY_F(25),
-     f26 = KEY_F(26),|
-     f27 = KEY_F(27),
-     f28 = KEY_F(28),
-     f29 = KEY_F(29),
-     f30 = KEY_F(30),
-     f31 = KEY_F(31),
-     f32 = KEY_F(32),
-     f33 = KEY_F(33),
-     f34 = KEY_F(34),
-     f35 = KEY_F(35),
-     f36 = KEY_F(36),
-     f37 = KEY_F(37),
-     f38 = KEY_F(38),
-     f39 = KEY_F(39),
-     f40 = KEY_F(40),
-     f41 = KEY_F(41),
-     f42 = KEY_F(42),
-     f43 = KEY_F(43),
-     f44 = KEY_F(44),
-     f45 = KEY_F(45),
-     f46 = KEY_F(46),
-     f47 = KEY_F(47),
-     f48 = KEY_F(48),
-     f49 = KEY_F(49),
-     f50 = KEY_F(50),
-     f51 = KEY_F(51),
-     f52 = KEY_F(52),
-     f53 = KEY_F(53),
-     f54 = KEY_F(54),
-     f55 = KEY_F(55),
-     f56 = KEY_F(56),
-     f57 = KEY_F(57),
-     f58 = KEY_F(58),
-     f59 = KEY_F(59),
-     f60 = KEY_F(60),
-     f61 = KEY_F(61),
-     f62 = KEY_F(62),
-     f63 = KEY_F(63),
-     dl = KEY_DL,
-     il = KEY_IL,
-     dc = KEY_DC,
-     ic = KEY_IC,
-     eic = KEY_EIC,
-     clear = KEY_CLEAR,
-     eos = KEY_EOS,
-     eol = KEY_EOL,
-     sf = KEY_SF,
-     sr = KEY_SR,
-     npage = KEY_NPAGE,
-     ppage = KEY_PPAGE,
-     stab = KEY_STAB,
-     ctab = KEY_CTAB,
-     catab = KEY_CATAB,
-     enter = KEY_ENTER,
-     sreset = KEY_SRESET,
-     reset = KEY_RESET,
-     print = KEY_PRINT,
-     ll = KEY_LL,
-     a1 = KEY_A1,
-     a3 = KEY_A3,
-     b2 = KEY_B2,
-     c1 = KEY_C1,
-     c3 = KEY_C3,
-     btab = KEY_BTAB,
-     beg = KEY_BEG,
-     cancel = KEY_CANCEL,
-     close = KEY_CLOSE,
-     command = KEY_COMMAND,
-     copy = KEY_COPY,
-     create = KEY_CREATE,
-     end = KEY_END,
-     exit = KEY_EXIT,
-     find = KEY_FIND,
-     help = KEY_HELP,
-     mark = KEY_MARK,
-     message = KEY_MESSAGE,
-     move = KEY_MOVE,
-     next = KEY_NEXT,
-     open = KEY_OPEN,
-     options = KEY_OPTIONS,
-     previous = KEY_PREVIOUS,
-     redo = KEY_REDO,
-     reference = KEY_REFERENCE,
-     refresh = KEY_REFRESH,
-     replace = KEY_REPLACE,
-     restart = KEY_RESTART,
-     resume = KEY_RESUME,
-     save = KEY_SAVE,
-     sbeg = KEY_SBEG,
-     scancel = KEY_SCANCEL,
-     scommand = KEY_SCOMMAND,
-     scopy = KEY_SCOPY,
-     screate = KEY_SCREATE,
-     sdc = KEY_SDC,
-     sdl = KEY_SDL,
-     select = KEY_SELECT,
-     send = KEY_SEND,
-     seol = KEY_SEOL,
-     sexit = KEY_SEXIT,
-     sfind = KEY_SFIND,
-     shelp = KEY_SHELP,
-     shome = KEY_SHOME,
-     sic = KEY_SIC,
-     sleft = KEY_SLEFT,
-     smessage = KEY_SMESSAGE,
-     smove = KEY_SMOVE,
-     snext = KEY_SNEXT,
-     soptions = KEY_SOPTIONS,
-     sprevious = KEY_SPREVIOUS,
-     sprint = KEY_SPRINT,
-     sredo = KEY_SREDO,
-     sreplace = KEY_SREPLACE,
-     sright = KEY_SRIGHT,
-     srsume = KEY_SRSUME,
-     ssave = KEY_SSAVE,
-     ssuspend = KEY_SSUSPEND,
-     sundo = KEY_SUNDO,
-     suspend = KEY_SUSPEND,
-     undo = KEY_UNDO,
-     mouse = KEY_MOUSE,
-     resize = KEY_RESIZE,
-     event = KEY_EVENT,
-     max = KEY_MAX,
-     +/
-
-
-
-}
-/+
- enum Attributes : chtype
- {
- normal = A_NORMAL,
- charText = A_CHARTEXT,
- color = A_COLOR,
- standout = A_STANDOUT,
- underline = A_UNDERLINE,
- reverse = A_REVERSE,
- blink = A_BLINK,
- dim = A_DIM,
- bold = A_BOLD,
- altCharSet = A_ALTCHARSET,
- invis = A_INVIS,
- protect = A_PROTECT,
- horizontal = A_HORIZONTAL,
- left = A_LEFT,
- low = A_LOW,
- right = A_RIGHT,
- top = A_TOP,
- vertical = A_VERTICAL,
- }
-
-  +/
-/// either a special key like arrow or backspace
-/// or an utf-8 string (e.g. ä is already 2 bytes in an utf-8 string)
-struct KeyInput
-{
-    static int COUNT = 0;
-    int count;
-    string input;
-    byte[] bytes;
-    bool ctrlC;
-    bool empty;
-    this(string input)
-    {
-        this.count = COUNT++;
-        this.input = input.dup;
-        this.ctrlC = false;
-        this.empty = false;
-    }
-
-    this(byte[] bytes)
-    {
-        this.count = COUNT++;
-        this.bytes = bytes;
-        this.ctrlC = false;
-        this.empty = false;
-    }
-
-    this(bool ctrlC, bool empty)
-    {
-        this.count = COUNT++;
-        this.bytes = null;
-        this.ctrlC = ctrlC;
-        this.empty = empty;
-    }
-
-    static auto fromCtrlC()
-    {
-        return cast(immutable) KeyInput(true, false);
-    }
-
-    static auto fromInterrupt()
-    {
-        return cast(immutable) KeyInput(false, true);
-    }
-
-    static auto fromText(string s)
-    {
-        return cast(immutable) KeyInput(s);
-    }
-
-    static auto fromBytes(byte[] bytes)
-    {
-        return KeyInput(bytes);
-    }
-
-    static auto fromEmpty()
-    {
-        return cast(immutable) KeyInput(false, true);
-    }
-}
-
-class NoKeyException : Exception
-{
-    this(string s)
-    {
-        super(s);
-    }
-}
-
-int byteCount(int k)
-{
-    if (k < 0b1100_0000)
-    {
-        return 1;
-    }
-    if (k < 0b1110_0000)
-    {
-        return 2;
-    }
-
-    if (k > 0b1111_0000)
-    {
-        return 3;
-    }
-
-    return 4;
 }
 
 alias InputHandler = bool delegate(KeyInput input);
-alias ButtonHandler = void delegate();
 abstract class Component
 {
     Component parent;
@@ -649,22 +374,20 @@ abstract class Component
 
     bool handleInput(KeyInput input)
     {
-        switch (input.input)
+        if (input.key == Key.tab && input.eventType == EventType.press)
         {
-        case "\t":
             focusNext();
             return true;
-        default:
-            if (focusPath !is null && focusPath.handleInput(input))
-            {
-                return true;
-            }
-            if (inputHandler !is null && inputHandler(input))
-            {
-                return true;
-            }
-            return false;
         }
+        if (focusPath !is null && focusPath.handleInput(input))
+        {
+            return true;
+        }
+        if (inputHandler !is null && inputHandler(input))
+        {
+            return true;
+        }
+        return false;
     }
     // establishes the input handling path from current focused
     // child to the root component
@@ -727,356 +450,6 @@ abstract class Component
             result = child.findAllFocusableComponents(result);
         }
         return result;
-    }
-}
-
-class HSplit : Component
-{
-    int split;
-    this(int split, Component top, Component bottom)
-    {
-        super([top, bottom]);
-        this.split = split;
-    }
-
-    override void resize(int left, int top, int width, int height)
-    {
-        super.resize(left, top, width, height);
-
-        int splitPos = split;
-        if (split < 0)
-        {
-            splitPos = height + split;
-        }
-        this.top.resize(0, 0, width, splitPos);
-        this.bottom.resize(0, splitPos, width, height - splitPos);
-    }
-
-    override void render(Context context)
-    {
-        this.top.render(context.forChild(this.top));
-        this.bottom.render(context.forChild(this.bottom));
-    }
-
-    private Component top()
-    {
-        return children[0];
-    }
-
-    private Component bottom()
-    {
-        return children[1];
-    }
-}
-
-class VSplit : Component
-{
-    int split;
-    this(int split, Component left, Component right)
-    {
-        super([left, right]);
-        this.split = split;
-    }
-
-    override void resize(int left, int top, int width, int height)
-    {
-        super.resize(left, top, width, height);
-
-        int splitPos = split;
-        if (split < 0)
-        {
-            splitPos = width + split;
-        }
-        this.left.resize(0, 0, splitPos, height);
-        this.right.resize(splitPos, 0, width - split, height);
-    }
-
-    override void render(Context context)
-    {
-        left.render(context.forChild(left));
-        right.render(context.forChild(right));
-    }
-
-    private Component left()
-    {
-        return children[0];
-    }
-
-    private Component right()
-    {
-        return children[1];
-    }
-}
-
-class Filled : Component
-{
-    string what;
-    this(string what)
-    {
-        this.what = what;
-    }
-
-    override void render(Context context)
-    {
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                context.putString(x, y, what);
-            }
-        }
-        context.putString(0, 0, "0");
-        context.putString(width - 1, height - 1, "1");
-    }
-
-    override bool handlesInput()
-    {
-        return false;
-    }
-}
-
-class Border : Component
-{
-    Component child;
-    string title;
-    this(string title, Component child)
-    {
-        this.title = title;
-        this.child = child;
-    }
-
-    override void render(Context context)
-    {
-        enum TL = "╭";
-        enum TR = "╮";
-        enum BL = "╰";
-        enum BR = "╯";
-        enum H = "─";
-        enum V = "│";
-        context.line(Position(0, 0), Position(width, 0), H);
-        context.line(Position(0, height - 1), Position(width, height - 1), H);
-        context.line(Position(0, 0), Position(0, height - 1), V);
-        context.line(Position(width - 1, 0), Position(width - 1, height - 1), V);
-        context.putString(0, 0, TL);
-        context.putString(width - 1, 0, TR);
-        context.putString(0, height - 1, BL);
-        context.putString(width - 1, height - 1, BR);
-        context.putString(3, 0, " " ~ title ~ " ");
-        child.render(context.forChild(child));
-    }
-
-    override void resize(int left, int top, int width, int height)
-    {
-        super.resize(left, top, width, height);
-        this.child.resize(1, 1, width - 2, height - 2);
-    }
-}
-
-class Text : Component
-{
-    string content;
-    this(string content)
-    {
-        this.content = content;
-    }
-
-    override void render(Context context)
-    {
-        context.putString(0, 0, content);
-    }
-
-    override bool handlesInput()
-    {
-        return false;
-    }
-}
-
-class MultilineText : Component
-{
-    string[] lines;
-    this(string content)
-    {
-        lines = content.split("\n");
-    }
-
-    override void render(Context context)
-    {
-        foreach (idx, line; lines)
-        {
-            context.putString(0, cast(int) idx, line);
-        }
-    }
-
-    override bool handlesInput()
-    {
-        return false;
-    }
-}
-
-class Canvas : Component
-{
-    class Graphics
-    {
-        import std.uni : unicode;
-
-        static braille = unicode.Braille.byCodepoint.array;
-        int[] pixels;
-        this()
-        {
-            pixels = new int[width * height];
-        }
-
-        int getWidth()
-        {
-            return width * 2;
-        }
-
-        int getHeight()
-        {
-            return height * 4;
-        }
-        // see https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm#All_cases
-        void line(const(Position) from, const(Position) to)
-        {
-            const int dx = (to.x - from.x).abs;
-            const int stepX = from.x < to.x ? 1 : -1;
-
-            const int dy = -(to.y - from.y).abs;
-            const int stepY = from.y < to.y ? 1 : -1;
-
-            int error = dx + dy;
-            int x = from.x;
-            int y = from.y;
-            while (true)
-            {
-                set(Position(x, y));
-                if (x == to.x && y == to.y)
-                {
-                    break;
-                }
-                const e2 = 2 * error;
-                if (e2 >= dy)
-                {
-                    if (x == to.x)
-                    {
-                        break;
-                    }
-                    error += dy;
-                    x += stepX;
-                }
-                if (e2 <= dx)
-                {
-                    if (y == to.y)
-                    {
-                        break;
-                    }
-                    error += dx;
-                    y += stepY;
-                }
-            }
-        }
-        // x and y in braille coords
-        void set(const(Position) p)
-        {
-            enforce(p.x < getWidth(), "x: %s needs to be smaller than %s".format(p.x, getWidth));
-            enforce(p.y < getHeight(), "y: %s needs to be smaller than %s".format(p.y, getHeight));
-            enforce(p.x >= 0, "x: %s needs to be >= 0".format(p.x));
-            enforce(p.y >= 0, "y: %s needs to be >= 0".format(p.y));
-            // bit nr
-            // 0 3
-            // 1 4
-            // 2 5
-            // 6 7
-            int xIdx = p.x / 2;
-            int yIdx = p.y / 4;
-
-            int brailleX = p.x % 2;
-            int brailleY = p.y % 4;
-            static brailleBits = [0, 1, 2, 6, 3, 4, 5, 7];
-            int idx = xIdx + yIdx * width;
-            pixels[idx] |= 1 << brailleBits[brailleY + brailleX * 4];
-        }
-
-        void render(Context context)
-        {
-            for (int j = 0; j < height; ++j)
-            {
-                for (int i = 0; i < width; ++i)
-                {
-                    const idx = i + j * width;
-                    const p = pixels[idx];
-                    if (p != 0)
-                    {
-                        context.putString(i, j, "%s".format(braille[p]));
-                    }
-                }
-            }
-        }
-    }
-
-    alias Painter = void delegate(Canvas.Graphics, Context);
-    Painter painter;
-    this(Painter painter)
-    {
-        this.painter = painter;
-    }
-
-    override void render(Context context)
-    {
-        scope g = new Graphics();
-        painter(g, context);
-        g.render(context);
-    }
-
-    override bool handlesInput()
-    {
-        return false;
-    }
-}
-
-class Button : Component
-{
-    string text;
-    ButtonHandler pressed;
-
-    this(string text, ButtonHandler pressed)
-    {
-        this.text = text;
-        this.pressed = pressed;
-    }
-
-    override void render(Context c)
-    {
-        if (currentFocusedComponent == this)
-        {
-            c.putString(0, 0, "> " ~ text);
-        }
-        else
-        {
-            c.putString(0, 0, "  " ~ text);
-        }
-    }
-
-    override bool handleInput(KeyInput input)
-    {
-        switch (input.input)
-        {
-        case " ":
-            pressed();
-            return true;
-        default:
-            return false;
-        }
-    }
-
-    override bool focusable()
-    {
-        return true;
-    }
-
-    override string toString()
-    {
-        return "Button";
     }
 }
 
@@ -1208,245 +581,6 @@ int clipTo(int v, size_t maximum)
     return min(v, maximum);
 }
 
-class List(T, alias stringTransform) : Component
-{
-    T[] model;
-    T[]delegate() getData;
-
-    ScrollInfo scrollInfo;
-    mixin Signal!(T) selectionChanged;
-    bool vMirror;
-
-    struct ScrollInfo
-    {
-        int selection;
-        int offset;
-        void up()
-        {
-            if (selection > 0)
-            {
-                selection--;
-                while (selection < offset)
-                {
-                    offset--;
-                }
-            }
-        }
-
-        void down(T[] model, int height)
-        {
-            if (selection + 1 < model.length)
-            {
-                selection++;
-                while (selection >= offset + height)
-                {
-                    offset++;
-                }
-            }
-        }
-    }
-
-    this(T[] model, bool vMirror = false)
-    {
-        this.model = model;
-        this.scrollInfo = ScrollInfo(0, 0);
-        this.vMirror = vMirror;
-    }
-
-    this(T[]delegate() getData, bool vMirror = false)
-    {
-        this.getData = getData;
-        this.scrollInfo = ScrollInfo(0, 0);
-        this.vMirror = vMirror;
-    }
-
-    override void render(Context context)
-    {
-        if (getData)
-        {
-            model = getData();
-        }
-        scrollInfo.offset = scrollInfo.offset.clipTo(model.length + -1);
-        if (model.length + -1 < context.height)
-        {
-            scrollInfo.offset = 0;
-        }
-        scrollInfo.selection = scrollInfo.selection.clipTo(model.length + -1);
-        for (int i = 0; i < height; ++i)
-        {
-            const index = i + scrollInfo.offset;
-            if (index >= model.length)
-                return;
-            const selected = (index == scrollInfo.selection) && (currentFocusedComponent == this);
-            static if (__traits(compiles, stringTransform(T.init, cast(size_t) 0)))
-                auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index], width - 2));
-            else
-                auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index]));
-            text = selected ? text.forceStyle(Style.reverse) : text;
-            context.putString(0, vMirror ? height - 1 - i : i, text);
-        }
-    }
-
-    void up()
-    {
-        vMirror ? _down : _up;
-    }
-
-    void down()
-    {
-        vMirror ? _up : _down;
-    }
-
-    void _up()
-    {
-        if (model.empty)
-        {
-            return;
-        }
-        scrollInfo.up;
-        selectionChanged.emit(model[scrollInfo.selection]);
-    }
-
-    void _down()
-    {
-        if (model.empty)
-        {
-            return;
-        }
-        scrollInfo.down(model, height);
-        selectionChanged.emit(model[scrollInfo.selection]);
-    }
-
-    void select()
-    {
-        if (model.empty)
-        {
-            return;
-        }
-        selectionChanged.emit(model[scrollInfo.selection]);
-    }
-
-    auto getSelection()
-    {
-        return model[scrollInfo.selection];
-    }
-
-    override bool handleInput(KeyInput input)
-    {
-        switch (input.input)
-        {
-        case Key.up:
-            up();
-            return true;
-        case Key.down:
-            down();
-            return true;
-        default:
-            return super.handleInput(input);
-        }
-    }
-
-    override bool focusable()
-    {
-        return true;
-    }
-
-    override string toString()
-    {
-        return "List";
-    }
-}
-
-struct Viewport
-{
-    int x;
-    int y;
-    int width;
-    int height;
-}
-
-class ScrollPane : Component
-{
-    Viewport viewport;
-    this(Component child)
-    {
-        super([child]);
-    }
-
-    bool up()
-    {
-        viewport.y = max(viewport.y - 1, 0);
-        return true;
-    }
-
-    bool down()
-    {
-        viewport.y++;
-        return true;
-    }
-
-    bool left()
-    {
-        viewport.x++;
-        return true;
-    }
-
-    bool right()
-    {
-        viewport.x = max(viewport.x - 1, 0);
-        return true;
-    }
-
-    override bool handleInput(KeyInput input)
-    {
-        switch (input.input)
-        {
-        case "w":
-        case "j":
-        case Key.up:
-            return up();
-        case "s":
-        case "k":
-        case Key.down:
-            return down();
-        case "a":
-        case "h":
-        case Key.left:
-            return left();
-        case "d":
-        case "l":
-        case Key.right:
-            return right();
-        default:
-            return super.handleInput(input);
-        }
-    }
-
-    override bool focusable()
-    {
-        return true;
-    }
-
-    override void render(Context c)
-    {
-        auto child = children.front;
-        child.render(c.forChild(child, viewport));
-        if (currentFocusedComponent == this)
-        {
-            c.putString(0, 0, ">");
-        }
-    }
-
-    override void resize(int left, int top, int width, int height)
-    {
-        super.resize(left, top, width, height);
-        viewport.width = width;
-        viewport.height = height;
-        auto child = children.front;
-        child.resize(0, 0, 1000, 1000);
-    }
-}
-
 extern (C) void signal(int sig, void function(int));
 UiInterface theUi;
 extern (C) void windowSizeChangedSignalHandler(int)
@@ -1457,6 +591,14 @@ extern (C) void windowSizeChangedSignalHandler(int)
 abstract class UiInterface
 {
     void resized();
+}
+
+struct Viewport
+{
+    int x;
+    int y;
+    int width;
+    int height;
 }
 
 class Context

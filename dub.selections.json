@@ -3,6 +3,7 @@
 	"versions": {
 		"color": "0.0.9",
 		"colored": "0.0.34",
+		"profiled": "0.0.2",
 		"unit-threaded": "2.2.3"
 	}
 }

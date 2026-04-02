@@ -1,5 +1,3 @@
-import tui : Ui, Text, KeyInput, List, VSplit, ScrollPane, HSplit, Terminal,
-    Button, MultilineText, Canvas, Context, Position, Component;
 import std.algorithm : joiner, map, min;
 import std.array : array, join;
 import std.conv : to;
@@ -8,6 +6,8 @@ import std.math : cos, sin;
 import std.range : iota;
 import std.stdio : stderr, stdin, writeln;
 import std.string : leftJustify;
+import tui : Component, Context, EventType, Key, KeyInput, Modifier, Position, Terminal, Ui;
+import tui.components : Button, Canvas, HSplit, List, MultilineText, ScrollPane, Text, VSplit;
 
 class Text2 : Text
 {
@@ -102,22 +102,26 @@ void demo(Ui ui)
     auto list2 = new List!(int, i => i.to!string)(iota(100, 200).array);
     list1.selectionChanged.connect(&status.dataChanged);
     list1.setInputHandler((input) {
-        switch (input.input)
+        status.content = format("%s", input);
+        if (input.key == Key.normal)
         {
-        case "1":
-            auto _pop = { ui.pop(); };
-            auto b1 = new Button("finish1", _pop);
-            auto b2 = new Button("finish2", _pop);
-            auto popup = new VSplit(50, b1, b2);
-            ui.push(popup);
-            return true;
-        case "2":
-        case "q":
-            state.finished = true;
-            return true;
-        default:
-            return false;
+            switch (input.c)
+            {
+            case '1':
+                auto _pop = { ui.pop(); };
+                auto b1 = new Button("finish1", _pop);
+                auto b2 = new Button("finish2", _pop);
+                auto popup = new VSplit(50, b1, b2);
+                ui.push(popup);
+                return true;
+            case '2', 'q':
+                state.finished = true;
+                return true;
+            default:
+                return false;
+            }
         }
+        return false;
     });
     list2.selectionChanged.connect(&status.dataChanged);
     list1.select;
@@ -127,6 +131,10 @@ void demo(Ui ui)
     auto top = new HSplit(5, canvas /+new MultilineText("1 11111111111111111111\n2 22222222222222222222\n3 33333333333333333333\n4 44444444444444444444\n5 55555555555555555555")+/ ,
             columns);
     auto root = new HSplit(-5, top, status);
+    root.setInputHandler((event) {
+        status.content = format("%s", event);
+        return false;
+    });
 
     ui.push(root);
 }
@@ -143,14 +151,12 @@ void canvas(Ui ui)
             Position(centerX + cast(int)(radius * cos(rad)), centerY + cast(int)(radius * sin(rad))));
     });
     root.setInputHandler((input) {
-        switch (input.input)
+        if (input.key == Key.normal && input.c == 'q')
         {
-        case "q":
             state.finished = true;
             return true;
-        default:
-            return false;
         }
+        return false;
     });
     ui.push(root);
 }
@@ -168,9 +174,9 @@ void readStdin(shared(Terminal) terminal, shared(Model) lines)
 {
     foreach (line; stdin.byLineCopy)
     {
-        (cast() terminal).runInTerminalThread(() {
-            (line) { return () => (cast() lines).add(line); }(line)();
-        });
+        (string l) {
+            (cast() terminal).runInTerminalThread(() { (cast() lines).add(l); });
+        }(line);
     }
 }
 
@@ -183,23 +189,36 @@ void stdinUi(shared(Terminal) terminal, Ui ui)
     spawn(&readStdin, terminal, cast(shared) lines);
 
     root.setInputHandler((input) {
-        switch (input.input)
+        if (input.key == Key.normal && input.c == 'q')
         {
-        case "q":
             state.finished = true;
             return true;
-        default:
-            return false;
         }
+        return false;
     });
     ui.push(root);
+}
+
+void inputDemo(Ui ui)
+{
+    auto label = new Text("Press any key (q to quit)...");
+    label.setInputHandler((input) {
+        label.content = input.toString();
+        if (input.key == Key.normal && input.c == 'q')
+        {
+            state.finished = true;
+            return true;
+        }
+        return false;
+    });
+    ui.push(label);
 }
 
 int main(string[] args)
 {
     if (args.length < 2)
     {
-        stderr.writeln("Usage: %s demo|canvas|stdin".format(args[0]));
+        stderr.writeln("Usage: %s demo|canvas|stdin|input".format(args[0]));
         return 1;
     }
 
@@ -218,6 +237,9 @@ int main(string[] args)
         case "stdin":
             stdinUi(cast(shared(Terminal)) terminal, ui);
             break;
+        case "input":
+            inputDemo(ui);
+            break;
         default:
             break;
         }
@@ -231,10 +253,10 @@ int main(string[] args)
             {
                 break;
             }
-            if (!input.empty)
-            {
-                ui.handleInput(cast() input);
+            if (input.key == Key.normal && input.c == 'c' && (input.modifiers & Modifier.ctrl) != 0) {
+                break;
             }
+            ui.handleInput(cast() input);
         }
     }
     return 0;

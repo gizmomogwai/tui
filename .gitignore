@@ -15,3 +15,8 @@ tui-test-*
 *.lst
 /out/
 /key.log
+trace.json
+unit_test.prof
+low-level.txt
+#*
+.#*
