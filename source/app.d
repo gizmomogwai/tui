@@ -253,7 +253,8 @@ int main(string[] args)
             {
                 break;
             }
-            if (input.key == Key.normal && input.c == 'c' && (input.modifiers & Modifier.ctrl) != 0) {
+            if (input.key == Key.normal && input.c == 'c' && (input.modifiers & Modifier.ctrl) != 0)
+            {
                 break;
             }
             ui.handleInput(cast() input);

@@ -310,8 +310,10 @@ immutable(KeyInput) parseKeyInput(const(byte)[] input) @trusted
             auto kittyString = parts[0] ~ parts[1][$ - 1];
             auto key = kittyStringToKey(cast(string) kittyString);
             auto modifierAndEvent = parseModifierAndEvent(cast(string) parts[1][0 .. $ - 1]);
-            if (key == Key.normal) {
-                return KeyInput.fromPrintable(cast(dchar)parseNumber(cast(string)parts[0]), modifierAndEvent.modifiers, modifierAndEvent.event);
+            if (key == Key.normal)
+            {
+                return KeyInput.fromPrintable(cast(dchar) parseNumber(cast(string) parts[0]),
+                        modifierAndEvent.modifiers, modifierAndEvent.event);
             }
             return KeyInput.fromKey(key, modifierAndEvent.modifiers, modifierAndEvent.event);
         }
@@ -471,21 +473,27 @@ private Key kittyStringToKey(string s)
     case "3~":
         return Key.delete_;
     case "1D":
+    case "D":
         return Key.left;
     case "1C":
+    case "C":
         return Key.right;
     case "1A":
+    case "A":
         return Key.up;
     case "1B":
+    case "B":
         return Key.down;
     case "5~":
         return Key.page_up;
     case "6~":
         return Key.page_down;
     case "1H":
+    case "H":
     case "7~":
         return Key.home;
     case "1F":
+    case "F":
     case "8~":
         return Key.end;
     case "57358u":
@@ -501,9 +509,11 @@ private Key kittyStringToKey(string s)
     case "57363u":
         return Key.menu;
     case "1P":
+    case "P":
     case "11~":
         return Key.f1;
     case "1Q":
+    case "Q":
     case "12~":
         return Key.f2;
     case "13~":

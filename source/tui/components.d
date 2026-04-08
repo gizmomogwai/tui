@@ -485,21 +485,21 @@ class List(T, alias stringTransform) : Component
 
     override bool handleInput(KeyInput input)
     {
-        if (input.eventType == EventType.release)
+        if ((input.eventType == EventType.press) || (input.eventType == EventType.repeat))
         {
-            return super.handleInput(input);
+            switch (input.key)
+            {
+            case Key.up:
+                up();
+                return true;
+            case Key.down:
+                down();
+                return true;
+            default:
+                return super.handleInput(input);
+            }
         }
-        switch (input.key)
-        {
-        case Key.up:
-            up();
-            return true;
-        case Key.down:
-            down();
-            return true;
-        default:
-            return super.handleInput(input);
-        }
+        return super.handleInput(input);
     }
 
     override bool focusable()
@@ -547,11 +547,7 @@ class ScrollPane : Component
 
     override bool handleInput(KeyInput input)
     {
-        if (input.eventType == EventType.release)
-        {
-            return super.handleInput(input);
-        }
-        if (input.key != Key.normal)
+        if ((input.eventType == EventType.press) || (input.eventType == EventType.repeat))
         {
             switch (input.key)
             {
@@ -563,22 +559,23 @@ class ScrollPane : Component
                 return left();
             case Key.right:
                 return right();
-            default:
-                break;
-            }
-        }
-        else
-        {
-            switch (input.c)
-            {
-            case 'w', 'j':
-                return up();
-            case 's', 'k':
-                return down();
-            case 'a', 'h':
-                return left();
-            case 'd', 'l':
-                return right();
+            case Key.normal:
+                {
+                    switch (input.c)
+                    {
+                    case 'w', 'j':
+                        return up();
+                    case 's', 'k':
+                        return down();
+                    case 'a', 'h':
+                        return left();
+                    case 'd', 'l':
+                        return right();
+                    default:
+                        break;
+                    }
+                    break;
+                }
             default:
                 break;
             }

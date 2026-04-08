@@ -381,14 +381,17 @@ abstract class Component
         }
         if (focusPath !is null && focusPath.handleInput(input))
         {
+            // does the parent (e.g. scroller) handle the input
             return true;
         }
         if (inputHandler !is null && inputHandler(input))
         {
+            // does the installed input handler want to handle the key input
             return true;
         }
         return false;
     }
+
     // establishes the input handling path from current focused
     // child to the root component
     void requestFocus()
@@ -786,9 +789,9 @@ class Ui : UiInterface
         }
     }
 
-    void handleInput(KeyInput input)
+    bool handleInput(KeyInput input)
     {
-        roots[$ - 1].handleInput(input);
+        return roots[$ - 1].handleInput(input);
     }
 }
 
