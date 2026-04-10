@@ -20,3 +20,5 @@ unit_test.prof
 low-level.txt
 #*
 .#*
+*.log
+*~
