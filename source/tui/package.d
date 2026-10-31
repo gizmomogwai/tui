@@ -279,8 +279,8 @@ class Terminal
                     }
                     h();
                 }
-                // delegate ran — loop back to check for input
-                continue;
+                // return so that the caller can render what the delegate changed
+                return KeyInput.fromInterrupt();
             }
 
             if (sel.isSet(stdinFD))
