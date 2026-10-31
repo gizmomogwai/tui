@@ -1,7 +1,8 @@
 module tui.components;
 
-import colored : forceStyle, Style;
+import colored : darkGray, forceStyle, Style;
 import std.algorithm : max, min;
+import std.conv : to;
 import std.exception : enforce;
 import std.format : format;
 import std.math.algebraic : abs;
@@ -367,6 +368,7 @@ class List(T, alias stringTransform) : Component
     ScrollInfo scrollInfo;
     mixin Signal!(T) selectionChanged;
     bool vMirror;
+    bool scrollbar;
 
     struct ScrollInfo
     {
@@ -397,18 +399,30 @@ class List(T, alias stringTransform) : Component
         }
     }
 
-    this(T[] model, bool vMirror = false)
+    this(T[] model)
     {
         this.model = model;
         this.scrollInfo = ScrollInfo(0, 0);
-        this.vMirror = vMirror;
     }
 
-    this(T[]delegate() getData, bool vMirror = false)
+    this(T[]delegate() getData)
     {
         this.getData = getData;
         this.scrollInfo = ScrollInfo(0, 0);
-        this.vMirror = vMirror;
+    }
+
+    /// Show the first element at the bottom and grow upwards
+    auto withVerticalFlip(bool flip = true)
+    {
+        this.vMirror = flip;
+        return this;
+    }
+
+    /// Show a scrollbar in the last column if not all elements fit
+    auto withScrollbar(bool scrollbar = true)
+    {
+        this.scrollbar = scrollbar;
+        return this;
     }
 
     override void render(Context context)
@@ -423,19 +437,31 @@ class List(T, alias stringTransform) : Component
             scrollInfo.offset = 0;
         }
         scrollInfo.selection = scrollInfo.selection.clipTo(model.length + -1);
+        const showScrollbar = scrollbar && model.length > height;
+        const textWidth = width - 2 - (showScrollbar ? 1 : 0);
         for (int i = 0; i < height; ++i)
         {
             const index = i + scrollInfo.offset;
             if (index >= model.length)
-                return;
+                break;
             const selected = (index == scrollInfo.selection) && (currentFocusedComponent == this);
             static if (__traits(compiles, stringTransform(T.init, cast(size_t) 0)))
                 auto text = "%s %s".format(selected ? ">" : " ",
-                        stringTransform(model[index], width - 2));
+                        stringTransform(model[index], textWidth));
             else
                 auto text = "%s %s".format(selected ? ">" : " ", stringTransform(model[index]));
             text = selected ? text.forceStyle(Style.reverse) : text;
             context.putString(0, vMirror ? height - 1 - i : i, text);
+        }
+        if (showScrollbar)
+        {
+            const size = max(1, cast(int)(height * height / model.length));
+            const position = min(height - size,
+                    cast(int)(scrollInfo.offset * (height - size) / (model.length - height)));
+            foreach (i; position .. position + size)
+            {
+                context.putString(width - 1, vMirror ? height - 1 - i : i, "│".darkGray.to!string);
+            }
         }
     }
 
